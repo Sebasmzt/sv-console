@@ -555,7 +555,7 @@
 
     >
         {#if isVisible}
-            <!-- Expanded Panel -->
+   
             <div class="toolbar-panel ">
                 <div class="panel-content">
                     <div class="console-section">
