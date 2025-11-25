@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { Terminal, Minus, X, Move } from "@lucide/svelte";
+    import { Terminal, Minus, X, Move, ChevronDown } from "@lucide/svelte";
+    import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
+    import { Button } from "$lib/components/ui/button";
 
     interface Props {
         startMinimized?: boolean;
@@ -559,45 +561,55 @@
                     <div class="console-section">
                         <div class="console-controls">
                             <div class="filter-group">
-                                <select
-                                    bind:value={logFilter}
-                                    class="log-filter"
-                                >
-                                    <option value="all"
-                                        >All ({logs.length})</option
-                                    >
-                                    <option value="log"
-                                        >Log ({logs.filter(
-                                            (l) => l.level === "log",
-                                        ).length})</option
-                                    >
-                                    <option value="info"
-                                        >Info ({logs.filter(
-                                            (l) => l.level === "info",
-                                        ).length})</option
-                                    >
-                                    <option value="warn"
-                                        >Warn ({logs.filter(
-                                            (l) => l.level === "warn",
-                                        ).length})</option
-                                    >
-                                    <option value="error"
-                                        >Error ({logs.filter(
-                                            (l) => l.level === "error",
-                                        ).length})</option
-                                    >
-                                </select>
+                                <DropdownMenu.Root>
+                                    <DropdownMenu.Trigger class="log-filter w-full">
+                                        <span>
+                                            {#if logFilter === "all"}
+                                                All ({logs.length})
+                                            {:else if logFilter === "log"}
+                                                Log ({logs.filter((l) => l.level === "log").length})
+                                            {:else if logFilter === "info"}
+                                                Info ({logs.filter((l) => l.level === "info").length})
+                                            {:else if logFilter === "warn"}
+                                                Warn ({logs.filter((l) => l.level === "warn").length})
+                                            {:else if logFilter === "error"}
+                                                Error ({logs.filter((l) => l.level === "error").length})
+                                            {/if}
+                                        </span>
+                                        <ChevronDown size={14} />
+                                    </DropdownMenu.Trigger>
+                                    <DropdownMenu.Content align="start" class="dropdown-content">
+                                        <DropdownMenu.RadioGroup bind:value={logFilter}>
+                                            <DropdownMenu.RadioItem value="all">
+                                                All ({logs.length})
+                                            </DropdownMenu.RadioItem>
+                                            <DropdownMenu.RadioItem value="log">
+                                                Log ({logs.filter((l) => l.level === "log").length})
+                                            </DropdownMenu.RadioItem>
+                                            <DropdownMenu.RadioItem value="info">
+                                                Info ({logs.filter((l) => l.level === "info").length})
+                                            </DropdownMenu.RadioItem>
+                                            <DropdownMenu.RadioItem value="warn">
+                                                Warn ({logs.filter((l) => l.level === "warn").length})
+                                            </DropdownMenu.RadioItem>
+                                            <DropdownMenu.RadioItem value="error">
+                                                Error ({logs.filter((l) => l.level === "error").length})
+                                            </DropdownMenu.RadioItem>
+                                        </DropdownMenu.RadioGroup>
+                                    </DropdownMenu.Content>
+                                </DropdownMenu.Root>
                             </div>
-                            <button class="clear-btn" onclick={clearLogs}>
+                            <Button variant="destructive" size="sm" class="clear-btn" onclick={clearLogs}>
                                 <X size={14} />
                                 Clear
-                            </button>
-                            <button
-                                class="close-panel-btn"
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onclick={toggleVisibility}
                             >
                                 <Minus size={16} />
-                            </button>
+                            </Button>
                         </div>
 
                         <div class="console-logs">
@@ -721,7 +733,9 @@
         {:else}
             <!-- Astro-style Toolbar -->
             <div class="toolbar-pill ">
-                <button
+                <Button
+                    variant="ghost"
+                    size="icon"
                     class="toolbar-item console-btn"
                     onclick={toggleVisibility}
                     title="Console ({logs.length} logs)"
@@ -730,69 +744,76 @@
                     {#if logs.length > 0}
                         <span class="badge">{logs.length}</span>
                     {/if}
-                </button>
+                </Button>
 
-                <button
+                <Button
+                    variant="ghost"
+                    size="icon"
                     class="toolbar-item position-btn"
                     onclick={(e) => togglePositionMenu(e)}
                     title="Change Position"
                 >
                     <Move size={20} />
-                </button>
+                </Button>
 
                 {#if showPositionMenu}
                     <div class="position-dropdown">
                         <div class="position-grid">
-                            <button
-                                class="position-option"
-                                class:active={position === "top-left"}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'top-left' ? 'active' : ''}"
                                 onclick={() => selectPosition("top-left")}
                             >
                                 <div class="position-visual">
                                     <div class="corner top-left"></div>
                                 </div>
                                 <span>Top Left</span>
-                            </button>
-                            <button
-                                class="position-option"
-                                class:active={position === "top-right"}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'top-right' ? 'active' : ''}"
                                 onclick={() => selectPosition("top-right")}
                             >
                                 <div class="position-visual">
                                     <div class="corner top-right"></div>
                                 </div>
                                 <span>Top Right</span>
-                            </button>
-                            <button
-                                class="position-option"
-                                class:active={position === "bottom-left"}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'bottom-left' ? 'active' : ''}"
                                 onclick={() => selectPosition("bottom-left")}
                             >
                                 <div class="position-visual">
                                     <div class="corner bottom-left"></div>
                                 </div>
                                 <span>Bottom Left</span>
-                            </button>
-                            <button
-                                class="position-option"
-                                class:active={position === "bottom-right"}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'bottom-right' ? 'active' : ''}"
                                 onclick={() => selectPosition("bottom-right")}
                             >
                                 <div class="position-visual">
                                     <div class="corner bottom-right"></div>
                                 </div>
                                 <span>Bottom Right</span>
-                            </button>
-                            <button
-                                class="position-option"
-                                class:active={position === "bottom-center"}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'bottom-center' ? 'active' : ''}"
                                 onclick={() => selectPosition("bottom-center")}
                             >
                                 <div class="position-visual">
                                     <div class="corner bottom-center"></div>
                                 </div>
                                 <span>Bottom Center</span>
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 {/if}
@@ -871,27 +892,28 @@
             0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
-    .toolbar-item {
-        background: transparent;
-        border: none;
-        color: #ffffff;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
+    :global(.toolbar-item) {
+        background: transparent !important;
+        border: none !important;
+        color: #ffffff !important;
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50% !important;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
         transition: all 0.15s ease;
         position: relative;
+        padding: 0 !important;
     }
 
-    .toolbar-item:hover {
-        background: rgba(255, 255, 255, 0.1);
+    :global(.toolbar-item:hover) {
+        background: rgba(255, 255, 255, 0.1) !important;
         transform: scale(1.05);
     }
 
-    .toolbar-item:active {
+    :global(.toolbar-item:active) {
         transform: scale(0.95);
     }
 
@@ -956,52 +978,35 @@
         flex: 1;
     }
 
-    .log-filter {
-        width: 100%;
-        padding: 6px 8px;
-        border: 1px solid rgba(56, 62, 68, 0.5);
-        border-radius: 6px;
-        background: rgba(0, 0, 0, 0.2);
-        font-size: 12px;
-        color: white;
-        font-weight: 400;
+    :global(.log-filter) {
+        width: 100% !important;
+        padding: 6px 8px !important;
+        border: 1px solid hsl(215 27.9% 25%) !important;
+        border-radius: 6px !important;
+        background: hsl(220 13% 9%) !important;
+        font-size: 12px !important;
+        color: white !important;
+        font-weight: 400 !important;
         transition: all 0.15s ease;
-    }
-
-    .log-filter:focus {
-        outline: none;
-        border-color: #60a5fa;
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-    }
-
-    .clear-btn,
-    .close-panel-btn {
-        display: flex;
+        display: flex !important;
         align-items: center;
-        gap: 4px;
-        padding: 6px 8px;
-        background: rgba(239, 68, 68, 0.8);
-        color: white;
-        border: 1px solid rgba(239, 68, 68, 0.6);
-        border-radius: 6px;
+        justify-content: space-between !important;
+        gap: 8px;
         cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        transition: all 0.15s ease;
+        height: auto !important;
     }
 
-    .close-panel-btn {
-        background: rgba(56, 62, 68, 0.8);
-        border-color: rgba(56, 62, 68, 0.6);
+    :global(.log-filter:hover) {
+        border-color: hsl(215 27.9% 35%) !important;
+        background: hsl(220 13% 12%) !important;
     }
 
-    .clear-btn:hover {
-        background: rgba(239, 68, 68, 1);
+    :global(.log-filter:focus) {
+        outline: none;
+        border-color: #60a5fa !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
     }
 
-    .close-panel-btn:hover {
-        background: rgba(75, 85, 99, 0.8);
-    }
 
     .console-section {
         display: flex;
@@ -1046,31 +1051,54 @@
         min-width: 140px;
     }
 
-    .position-option {
-        display: flex;
+    :global(.position-option) {
+        display: flex !important;
         align-items: center;
         gap: 8px;
-        padding: 8px 12px;
-        background: transparent;
-        border: 1px solid rgba(56, 62, 68, 0.3);
-        border-radius: 6px;
-        color: white;
+        padding: 8px 12px !important;
+        background: transparent !important;
+        border: 1px solid rgba(56, 62, 68, 0.3) !important;
+        border-radius: 6px !important;
+        color: white !important;
         cursor: pointer;
         transition: all 0.15s ease;
-        font-size: 12px;
-        font-weight: 500;
+        font-size: 12px !important;
+        font-weight: 500 !important;
         text-align: left;
+        justify-content: flex-start !important;
+        height: auto !important;
     }
 
-    .position-option:hover {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(56, 62, 68, 0.6);
+    :global(.position-option:hover) {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border-color: rgba(56, 62, 68, 0.6) !important;
     }
 
-    .position-option.active {
-        background: rgba(59, 130, 246, 0.15);
-        border-color: rgba(59, 130, 246, 0.5);
-        color: #60a5fa;
+    :global(.position-option.active) {
+        background: rgba(59, 130, 246, 0.15) !important;
+        border-color: rgba(59, 130, 246, 0.5) !important;
+        color: #60a5fa !important;
+    }
+
+    :global(.position-option.active .corner) {
+        background: #60a5fa;
+        box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+    }
+
+    :global(.clear-btn) {
+        background: hsl(0 84.2% 60.2%) !important;
+        color: white !important;
+        border-color: hsl(0 84.2% 60.2%) !important;
+    }
+
+    :global(.clear-btn:hover) {
+        background: hsl(0 84.2% 50%) !important;
+        border-color: hsl(0 84.2% 50%) !important;
+    }
+
+    :global(.clear-btn svg) {
+        color: white !important;
+        stroke: white !important;
     }
 
     .position-visual {
@@ -1116,11 +1144,6 @@
         transform: translateX(-50%);
     }
 
-    .position-option.active .corner {
-        background: #60a5fa;
-        box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
-    }
-
     @keyframes slideIn {
         from {
             opacity: 0;
@@ -1151,54 +1174,35 @@
         flex: 1;
     }
 
-    .log-filter {
-        width: 100%;
-        padding: 3px 5px;
-        border: 1px solid hsl(215 27.9% 16.9% / 0.994);
-        border-radius: 6px;
-        background: hsl(220 13% 9% / 0.994);
-        font-size: 14px;
-        color: hsl(210 40% 98%);
-        font-weight: 400;
+    :global(.dropdown-content) {
+        background: hsl(220 13% 9% / 0.994) !important;
+        border-color: hsl(215 27.9% 16.9% / 0.994) !important;
+        min-width: 180px;
+        z-index: 10002;
+        color: hsl(210 40% 98%) !important;
+    }
+
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]) {
+        color: hsl(210 40% 98%) !important;
+        background: transparent;
         transition: all 0.15s ease;
     }
 
-    .log-filter:focus {
-        outline: none;
-        border-color: hsl(217.2 91.2% 59.8%);
-        box-shadow: 0 0 0 2px hsl(217.2 91.2% 59.8% / 0.3);
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]:hover) {
+        background: rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
     }
 
-    .log-filter:hover {
-        border-color: hsl(215 27.9% 20%);
-        background: hsl(220 13% 9%);
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"][data-state="checked"]) {
+        background: rgba(96, 165, 250, 0.15) !important;
+        color: #60a5fa !important;
     }
 
-    .clear-btn {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        padding: 3px 5px;
-        background: hsl(0 84.2% 60.2%);
-        color: hsl(210 40% 98%);
-        border: 1px solid hsl(0 84.2% 60.2%);
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.15s ease;
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"] svg) {
+        color: #60a5fa !important;
+        fill: #60a5fa !important;
     }
 
-    .clear-btn:hover {
-        background: hsl(0 84.2% 55%);
-        border-color: hsl(0 84.2% 55%);
-        color: hsl(210 40% 98%);
-    }
-
-    .clear-btn :global(svg) {
-        color: hsl(210 40% 98%);
-        stroke: hsl(210 40% 98%);
-    }
 
     .console-logs {
         flex: 1;
