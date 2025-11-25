@@ -544,16 +544,17 @@
 
 {#if isDev}
     <div
-        class="astro-dev-toolbar"
+        class="astro-dev-toolbar bg-transparent"
         class:top-left={position === "top-left"}
         class:top-right={position === "top-right"}
         class:bottom-left={position === "bottom-left"}
         class:bottom-right={position === "bottom-right"}
         class:bottom-center={position === "bottom-center"}
+
     >
         {#if isVisible}
             <!-- Expanded Panel -->
-            <div class="toolbar-panel">
+            <div class="toolbar-panel ">
                 <div class="panel-content">
                     <div class="console-section">
                         <div class="console-controls">
@@ -719,7 +720,7 @@
             </div>
         {:else}
             <!-- Astro-style Toolbar -->
-            <div class="toolbar-pill">
+            <div class="toolbar-pill ">
                 <button
                     class="toolbar-item console-btn"
                     onclick={toggleVisibility}
@@ -847,7 +848,7 @@
 
     /* Toolbar Pill - Astro-inspired */
     .toolbar-pill {
-        background: rgba(27, 31, 35, 0.95);
+        background: rgba(27, 31, 35, 0.6);
         border: 1px solid rgba(56, 62, 68, 0.5);
         border-radius: 50px;
         padding: 8px;
