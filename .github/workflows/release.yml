@@ -87,12 +87,7 @@ jobs:
           git tag ${{ steps.version.outputs.version }}
           
       - name: Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          branch: main
-          tags: true
-          force: true
+        run: git push origin main --follow-tags
           
       - name: Create GitHub Release
         uses: actions/create-release@v1
