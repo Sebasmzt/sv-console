@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { Terminal, Minus, X, Move, ChevronDown } from "@lucide/svelte";
+    import { Terminal, Minus, X, Move, ChevronDown } from "$lib/icons";
     import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
     import { Button } from "$lib/components/ui/button";
 
@@ -30,9 +30,8 @@
     let activeTab = $state<"console">("console");
     let logFilter = $state<"all" | "log" | "info" | "warn" | "error">("all");
     let cleanupInterval: ReturnType<typeof setInterval>;
-    let isIntercepting = false; // Flag to prevent infinite loops
+    let isIntercepting = false;
     let lastLogContent = $state({
-        // Store last log content to avoid duplicates
         log: "",
         info: "",
         warn: "",
@@ -41,12 +40,21 @@
     let position = $state<
         | "top-left"
         | "top-right"
+        | "top-center"
         | "bottom-left"
         | "bottom-right"
         | "bottom-center"
     >("bottom-center");
     let showPositionMenu = $state(false);
     let justOpenedMenu = false;
+
+    // Drag state
+    let isDragging = $state(false);
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragCurrentX = $state(0);
+    let dragCurrentY = $state(0);
+    let pillElement: HTMLDivElement | null = null;
 
     const originalConsole = {
         log: console.log,
@@ -59,7 +67,6 @@
         isBrowser = typeof window !== "undefined";
 
         if (isBrowser) {
-            // Load position from localStorage
             const savedPosition = localStorage.getItem(
                 "floating-dev-cards-position",
             );
@@ -68,6 +75,7 @@
                 [
                     "top-left",
                     "top-right",
+                    "top-center",
                     "bottom-left",
                     "bottom-right",
                     "bottom-center",
@@ -76,35 +84,27 @@
                 position = savedPosition as typeof position;
             }
 
-            // Strict production check - if any production indicators, don't show
             const isProduction =
-                // Explicit production checks
                 (typeof process !== "undefined" &&
                     process.env?.NODE_ENV === "production") ||
                 (typeof process !== "undefined" &&
                     process.env?.NODE_ENV === "prod") ||
-                // Production-like hostnames
                 (window.location.hostname !== "localhost" &&
                     window.location.hostname !== "127.0.0.1" &&
                     !window.location.hostname.includes("localhost") &&
                     window.location.protocol === "https:") ||
-                // Production ports (80, 443, or no specific dev ports)
                 !window.location.port ||
                 window.location.port === "80" ||
                 window.location.port === "443";
 
-            // Only show in development - strict checks
             isDev =
                 !isProduction &&
-                // Process env development
                 ((typeof process !== "undefined" &&
                     process.env?.NODE_ENV === "development") ||
-                    // Development hostnames
                     window.location.hostname === "localhost" ||
                     window.location.hostname === "127.0.0.1" ||
                     window.location.hostname.includes("localhost") ||
                     window.location.hostname.startsWith("192.168.") ||
-                    // Development ports
                     [
                         "5173",
                         "5174",
@@ -114,20 +114,14 @@
                         "8000",
                         "9000",
                     ].includes(window.location.port) ||
-                    // URL-based detection
                     window.location.search.includes("dev") ||
                     window.location.search.includes("debug") ||
                     window.location.search.includes("local"));
 
             if (isDev) {
-                // Start minimized if explicitly requested or if auto-initialized
                 isVisible = startMinimized ? false : true;
                 interceptConsole();
-
-                // Start periodic cleanup of old logs
-                cleanupInterval = setInterval(cleanupOldLogs, 10000); // Check every second
-
-                // Add click outside listener
+                cleanupInterval = setInterval(cleanupOldLogs, 10000);
                 document.addEventListener("click", handleClickOutside);
             }
         }
@@ -147,54 +141,141 @@
     }
 
     function togglePositionMenu(event?: Event) {
-        // Debug: Toggling position menu
         if (event) {
             event.stopPropagation();
         }
         showPositionMenu = !showPositionMenu;
 
         if (showPositionMenu) {
-            // Set flag to prevent immediate closing
             justOpenedMenu = true;
-            // Clear the flag after a short delay
             setTimeout(() => {
                 justOpenedMenu = false;
             }, 100);
         }
-
-        // Debug: Position menu toggled
     }
 
     function selectPosition(newPosition: typeof position) {
-        // Debug: Selecting position
         position = newPosition;
         showPositionMenu = false;
 
-        // Save to localStorage
         if (isBrowser) {
             localStorage.setItem("floating-dev-cards-position", position);
         }
-        // Debug: Position updated and saved
     }
 
     function handleClickOutside(event: MouseEvent) {
         const target = event.target as Element;
-        // Debug: Click outside detected
 
-        // Don't close if we just opened the menu
         if (justOpenedMenu) {
-            // Debug: Menu just opened, ignoring click outside
             return;
         }
 
         if (showPositionMenu && !target.closest(".position-menu-container")) {
-            // Debug: Closing menu due to outside click
             showPositionMenu = false;
         }
     }
 
+    // Drag handlers for minimized pill - only from Move button
+    let isPotentialDrag = false;
+    const DRAG_THRESHOLD = 8; // pixels to move before starting drag
+
+    function handleMoveButtonDragStart(event: MouseEvent | TouchEvent) {
+        if (isVisible) return; // Only drag when minimized
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+        const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+
+        dragStartX = clientX;
+        dragStartY = clientY;
+        dragCurrentX = clientX;
+        dragCurrentY = clientY;
+        isPotentialDrag = true;
+        isDragging = false;
+
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleDragEnd);
+        document.addEventListener('touchmove', handleDragMove, { passive: false });
+        document.addEventListener('touchend', handleDragEnd);
+    }
+
+    function handleDragMove(event: MouseEvent | TouchEvent) {
+        if (!isPotentialDrag) return;
+
+        const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+        const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+
+        const distance = Math.sqrt(
+            Math.pow(clientX - dragStartX, 2) +
+            Math.pow(clientY - dragStartY, 2)
+        );
+
+        // Only start visual dragging after threshold
+        if (distance > DRAG_THRESHOLD) {
+            isDragging = true;
+            if ('touches' in event) {
+                event.preventDefault(); // Prevent scrolling on touch
+            }
+        }
+
+        if (isDragging) {
+            dragCurrentX = clientX;
+            dragCurrentY = clientY;
+        }
+    }
+
+    function handleDragEnd() {
+        document.removeEventListener('mousemove', handleDragMove);
+        document.removeEventListener('mouseup', handleDragEnd);
+        document.removeEventListener('touchmove', handleDragMove);
+        document.removeEventListener('touchend', handleDragEnd);
+
+        if (!isDragging) {
+            // It was a click, not a drag - reset state
+            isPotentialDrag = false;
+            return;
+        }
+
+        // Determine the nearest snap position based on drag end coordinates
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Determine horizontal position (left, center, right)
+        let horizontal: 'left' | 'center' | 'right';
+        if (dragCurrentX < viewportWidth / 3) {
+            horizontal = 'left';
+        } else if (dragCurrentX > (viewportWidth * 2) / 3) {
+            horizontal = 'right';
+        } else {
+            horizontal = 'center';
+        }
+
+        // Determine vertical position (top, bottom)
+        const vertical = dragCurrentY < viewportHeight / 2 ? 'top' : 'bottom';
+
+        // Map to position
+        let newPosition: typeof position;
+        if (vertical === 'top') {
+            if (horizontal === 'left') newPosition = 'top-left';
+            else if (horizontal === 'right') newPosition = 'top-right';
+            else newPosition = 'top-center';
+        } else {
+            if (horizontal === 'left') newPosition = 'bottom-left';
+            else if (horizontal === 'right') newPosition = 'bottom-right';
+            else newPosition = 'bottom-center';
+        }
+
+        selectPosition(newPosition);
+
+        isDragging = false;
+        isPotentialDrag = false;
+        dragCurrentX = 0;
+        dragCurrentY = 0;
+    }
+
     function interceptConsole() {
-      
         console.log = (...args: any[]) => {
             const currentLogContent = args.map((arg) => String(arg)).join(" ");
             if (currentLogContent !== lastLogContent.log) {
@@ -238,20 +319,15 @@
                 }
             }
         };
-
     }
 
     function addLogEntry(level: LogEntry["level"], args: any[]) {
-        // Prevent infinite loops during processing
-        // console.info("entry:", level.toString());
         if (isIntercepting) {
             return;
         }
 
-        // Prevent infinite loops - check if this is our own log
         const message = args.map((arg) => String(arg)).join(" ");
 
-        // Skip logs from the floating console itself or Svelte internals (but be more specific)
         if (
             message.includes("FloatingDevCards:") ||
             message.includes("svelte-dev-floating") ||
@@ -260,36 +336,30 @@
             return;
         }
 
-        // Check for duplicate logs (exact same message as the last log)
         const now = new Date();
         const lastLog = logs[logs.length - 1];
         if (lastLog && lastLog.message === message && lastLog.level === level) {
-            // console.info("duplicate");
-            return; // Skip exact duplicate of last log
+            return;
         }
 
-        // Prevent infinite loops by setting the flag
         isIntercepting = true;
 
         try {
             const processedArgs = args.map((arg) => {
-                // Check if it's an object (including arrays) but not null
                 if (typeof arg === "object" && arg !== null) {
                     try {
                         const jsonContent = JSON.stringify(arg, null, 2);
-                        // Only treat as JSON if it's a complex object/array (more than just a simple value)
                         if (
                             jsonContent.length > 10 &&
                             (jsonContent.includes("{") ||
                                 jsonContent.includes("["))
                         ) {
-                            // Count lines to determine if should be collapsed by default
                             const lineCount = jsonContent.split("\n").length;
                             return {
                                 type: "json" as const,
                                 content: jsonContent,
                                 raw: arg,
-                                expanded: lineCount <= 6, // Auto-expand if 6 lines or fewer
+                                expanded: lineCount <= 6,
                             };
                         }
                     } catch {
@@ -297,7 +367,6 @@
                     }
                 }
 
-                // For all other cases (primitives, null, failed JSON), treat as text
                 return {
                     type: "text" as const,
                     content: String(arg),
@@ -314,30 +383,22 @@
             };
 
             logs = [...logs, entry];
-
-            // Clean up logs older than 6 seconds (but keep the last 20 always)
             cleanupOldLogs();
 
-            // Auto-scroll to bottom after adding new log
             requestAnimationFrame(() => {
                 scrollToBottom();
             });
         } catch (error) {
             console.info("error", error);
-            // Silently fail - don't log the error
         } finally {
-            // Always reset the flag after a short delay
-            // setTimeout(() => {
             isIntercepting = false;
-            // }, 1);
         }
     }
 
     function cleanupOldLogs() {
         const now = new Date().getTime();
-        const sixSecondsAgo = now - 6000; // 6 seconds in milliseconds
+        const sixSecondsAgo = now - 6000;
 
-        // Keep the last 20 logs always, only delete older logs from position 21 onwards
         if (logs.length > 20) {
             const last20 = logs.slice(-20);
             const older = logs.slice(0, -20);
@@ -408,7 +469,6 @@
     }
 
     function getCollapsedPreview(content: string, maxLength = 80): string {
-        // Parse JSON to get type info for better preview
         try {
             const parsed = JSON.parse(content);
             if (Array.isArray(parsed)) {
@@ -439,7 +499,6 @@
             // Fallback to string truncation
         }
 
-        // Remove extra whitespace and newlines for a compact preview
         const compactContent = content
             .replace(/\s+/g, " ")
             .replace(/\n/g, " ")
@@ -447,10 +506,7 @@
 
         if (compactContent.length <= maxLength) return compactContent;
 
-        // Try to create a meaningful preview by showing the start
         const truncated = compactContent.substring(0, maxLength);
-
-        // Try to end at a reasonable boundary
         const lastComma = truncated.lastIndexOf(",");
         const lastColon = truncated.lastIndexOf(":");
 
@@ -466,13 +522,11 @@
     function highlightJSON(jsonString: string): string {
         let highlighted = jsonString;
 
-        // Property keys (must be done first)
         highlighted = highlighted.replace(
             /("(?:[^"\\]|\\.)*")(\s*):/g,
             '<span class="json-key">$1</span>$2<span class="json-colon">:</span>',
         );
 
-        // String values (but not keys)
         highlighted = highlighted.replace(
             /:\s*("(?:[^"\\]|\\.)*")/g,
             ': <span class="json-string">$1</span>',
@@ -486,7 +540,6 @@
             ', <span class="json-string">$1</span>',
         );
 
-        // Numbers
         highlighted = highlighted.replace(
             /:\s*(-?\d+\.?\d*)\b/g,
             ': <span class="json-number">$1</span>',
@@ -500,7 +553,6 @@
             ', <span class="json-number">$1</span>',
         );
 
-        // Booleans
         highlighted = highlighted.replace(
             /:\s*(true|false)\b/g,
             ': <span class="json-boolean">$1</span>',
@@ -514,7 +566,6 @@
             ', <span class="json-boolean">$1</span>',
         );
 
-        // Null
         highlighted = highlighted.replace(
             /:\s*(null)\b/g,
             ': <span class="json-null">$1</span>',
@@ -528,13 +579,11 @@
             ', <span class="json-null">$1</span>',
         );
 
-        // Brackets and braces
         highlighted = highlighted.replace(
             /([{}[\]])/g,
             '<span class="json-bracket">$1</span>',
         );
 
-        // Commas (but not those inside strings)
         highlighted = highlighted.replace(
             /,(?![^"]*"[^"]*:)/g,
             '<span class="json-comma">,</span>',
@@ -546,23 +595,21 @@
 
 {#if isDev}
     <div
-        class="astro-dev-toolbar bg-transparent"
+        class="sv-console"
         class:top-left={position === "top-left"}
         class:top-right={position === "top-right"}
         class:bottom-left={position === "bottom-left"}
         class:bottom-right={position === "bottom-right"}
         class:bottom-center={position === "bottom-center"}
-
     >
         {#if isVisible}
-   
-            <div class="toolbar-panel ">
+            <div class="console-panel glass">
                 <div class="panel-content">
                     <div class="console-section">
                         <div class="console-controls">
                             <div class="filter-group">
                                 <DropdownMenu.Root>
-                                    <DropdownMenu.Trigger class="log-filter w-full">
+                                    <DropdownMenu.Trigger class="log-filter">
                                         <span>
                                             {#if logFilter === "all"}
                                                 All ({logs.length})
@@ -578,7 +625,7 @@
                                         </span>
                                         <ChevronDown size={14} />
                                     </DropdownMenu.Trigger>
-                                    <DropdownMenu.Content align="start" class="dropdown-content">
+                                    <DropdownMenu.Content align="start" class="dropdown-content glass">
                                         <DropdownMenu.RadioGroup bind:value={logFilter}>
                                             <DropdownMenu.RadioItem value="all">
                                                 All ({logs.length})
@@ -607,6 +654,7 @@
                                 variant="ghost"
                                 size="icon-sm"
                                 onclick={toggleVisibility}
+                                class="minimize-btn"
                             >
                                 <Minus size={16} />
                             </Button>
@@ -621,100 +669,58 @@
                                     class:info={log.level === "info"}
                                 >
                                     <div class="log-header">
-                                        <span class="log-time"
-                                            >{formatTime(log.timestamp)}</span
-                                        >
-                                        <span
-                                            class="log-level"
-                                            data-level={log.level}
-                                            >{log.level.toUpperCase()}</span
-                                        >
+                                        <span class="log-time">{formatTime(log.timestamp)}</span>
+                                        <span class="log-level" data-level={log.level}>
+                                            {log.level.toUpperCase()}
+                                        </span>
                                     </div>
                                     <div class="log-content">
                                         {#each log.args as arg, index}
-                                            {#if index > 0}<span
-                                                    class="log-separator"
-                                                >
-                                                </span>{/if}
+                                            {#if index > 0}<span class="log-separator"> </span>{/if}
                                             {#if arg.type === "json"}
                                                 <div class="log-json-container">
-                                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                                                     {#if arg.expanded}
                                                         <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                                                         <div
                                                             class="log-json expanded"
-                                                            onclick={() =>
-                                                                toggleExpansion(
-                                                                    log.id,
-                                                                    index,
-                                                                )}
+                                                            onclick={() => toggleExpansion(log.id, index)}
                                                         >
-                                                            <div
-                                                                class="expand-header"
-                                                            >
-                                                                <span
-                                                                    class="expand-indicator"
-                                                                    >▼</span
-                                                                >
-                                                                <span
-                                                                    class="expand-text"
-                                                                    >{arg.content.split(
-                                                                        "\n",
-                                                                    ).length > 6
+                                                            <div class="expand-header">
+                                                                <span class="expand-indicator">▼</span>
+                                                                <span class="expand-text">
+                                                                    {arg.content.split("\n").length > 6
                                                                         ? "Large JSON Object (click to compact)"
-                                                                        : "JSON Object (click to collapse)"}</span
-                                                                >
+                                                                        : "JSON Object (click to collapse)"}
+                                                                </span>
                                                             </div>
-                                                            <div
-                                                                class="json-content"
-                                                            >
-                                                                {@html highlightJSON(
-                                                                    arg.content,
-                                                                )}
+                                                            <div class="json-content">
+                                                                {@html highlightJSON(arg.content)}
                                                             </div>
                                                         </div>
                                                     {:else}
+                                                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                                                         <div
                                                             class="log-json collapsed"
-                                                            onclick={() =>
-                                                                toggleExpansion(
-                                                                    log.id,
-                                                                    index,
-                                                                )}
+                                                            onclick={() => toggleExpansion(log.id, index)}
                                                         >
-                                                            <div
-                                                                class="expand-header"
-                                                            >
-                                                                <span
-                                                                    class="expand-indicator"
-                                                                    >▶</span
-                                                                >
-                                                                <span
-                                                                    class="expand-text"
-                                                                    >{arg.content.split(
-                                                                        "\n",
-                                                                    ).length > 6
+                                                            <div class="expand-header">
+                                                                <span class="expand-indicator">▶</span>
+                                                                <span class="expand-text">
+                                                                    {arg.content.split("\n").length > 6
                                                                         ? "Large JSON Object (click to expand)"
-                                                                        : "JSON Object (click to expand)"}</span
-                                                                >
+                                                                        : "JSON Object (click to expand)"}
+                                                                </span>
                                                             </div>
-                                                            <div
-                                                                class="json-preview"
-                                                            >
-                                                                {@html highlightJSON(
-                                                                    getCollapsedPreview(
-                                                                        arg.content,
-                                                                    ),
-                                                                )}
+                                                            <div class="json-preview">
+                                                                {@html highlightJSON(getCollapsedPreview(arg.content))}
                                                             </div>
                                                         </div>
                                                     {/if}
                                                 </div>
                                             {:else}
-                                                <span class="log-text"
-                                                    >{arg.content}</span
-                                                >
+                                                <span class="log-text">{arg.content}</span>
                                             {/if}
                                         {/each}
                                     </div>
@@ -731,8 +737,12 @@
                 </div>
             </div>
         {:else}
-            <!-- Astro-style Toolbar -->
-            <div class="toolbar-pill ">
+            <div
+                class="toolbar-pill glass"
+                class:dragging={isDragging}
+                bind:this={pillElement}
+                style={isDragging ? `position: fixed; left: ${dragCurrentX - 50}px; top: ${dragCurrentY - 28}px; transform: none;` : ''}
+            >
                 <Button
                     variant="ghost"
                     size="icon"
@@ -746,18 +756,25 @@
                     {/if}
                 </Button>
 
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="toolbar-item position-btn"
-                    onclick={(e) => togglePositionMenu(e)}
-                    title="Change Position"
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                    class="drag-handle"
+                    onmousedown={handleMoveButtonDragStart}
+                    ontouchstart={handleMoveButtonDragStart}
+                    title="Drag to reposition or click for menu"
                 >
-                    <Move size={20} />
-                </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="toolbar-item position-btn"
+                        onclick={(e) => { if (!isDragging) togglePositionMenu(e); }}
+                    >
+                        <Move size={20} />
+                    </Button>
+                </div>
 
                 {#if showPositionMenu}
-                    <div class="position-dropdown">
+                    <div class="position-dropdown glass">
                         <div class="position-grid">
                             <Button
                                 variant="outline"
@@ -769,6 +786,17 @@
                                     <div class="corner top-left"></div>
                                 </div>
                                 <span>Top Left</span>
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="position-option {position === 'top-center' ? 'active' : ''}"
+                                onclick={() => selectPosition("top-center")}
+                            >
+                                <div class="position-visual">
+                                    <div class="corner top-center"></div>
+                                </div>
+                                <span>Top Center</span>
                             </Button>
                             <Button
                                 variant="outline"
@@ -823,8 +851,11 @@
 {/if}
 
 <style>
-    /* Astro DevToolbar-inspired design */
-    .astro-dev-toolbar {
+    /* ========================================
+       GLASSMORPHISM DESIGN SYSTEM
+       ======================================== */
+
+    .sv-console {
         position: fixed;
         z-index: 10000;
         font-family:
@@ -841,61 +872,96 @@
         transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .astro-dev-toolbar.top-left {
+    /* Glassmorphism base class */
+    .glass {
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        box-shadow:
+            0 8px 32px rgba(0, 0, 0, 0.4),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+            0 1px 0 rgba(255, 255, 255, 0.1) inset;
+    }
+
+    /* Position variants */
+    .sv-console.top-left {
         top: 20px;
         left: 20px;
     }
 
-    .astro-dev-toolbar.top-right {
+    .sv-console.top-right {
         top: 20px;
         right: 20px;
     }
 
-    .astro-dev-toolbar.bottom-left {
+    .sv-console.bottom-left {
         bottom: 20px;
         left: 20px;
     }
 
-    .astro-dev-toolbar.bottom-right {
+    .sv-console.bottom-right {
         bottom: 20px;
         right: 20px;
     }
 
-    .astro-dev-toolbar.bottom-center {
+    .sv-console.bottom-center {
         bottom: 20px;
         left: 50%;
         transform: translateX(-50%);
     }
 
-    /* Toolbar Pill - Astro-inspired */
+    .sv-console.top-center {
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    /* ========================================
+       TOOLBAR PILL (Minimized State)
+       ======================================== */
+
     .toolbar-pill {
-        background: rgba(27, 31, 35, 0.6);
-        border: 1px solid rgba(56, 62, 68, 0.5);
         border-radius: 50px;
         padding: 8px;
         display: flex;
         align-items: center;
-        gap: 8px;
-        box-shadow:
-            0 8px 32px rgba(0, 0, 0, 0.32),
-            0 2px 8px rgba(0, 0, 0, 0.24);
-        backdrop-filter: blur(12px);
-        transition: all 0.2s ease;
+        gap: 4px;
         position: relative;
+        transition: all 0.2s ease;
+        user-select: none;
+    }
+
+    .toolbar-pill.dragging {
+        opacity: 0.9;
+        z-index: 10001;
+        transition: none;
+    }
+
+    .drag-handle {
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .drag-handle:active {
+        cursor: grabbing;
     }
 
     .toolbar-pill:hover {
-        background: rgba(27, 31, 35, 0.98);
-        border-color: rgba(56, 62, 68, 0.8);
+        background: rgba(15, 23, 42, 0.85);
+        border-color: rgba(148, 163, 184, 0.25);
         box-shadow:
-            0 12px 40px rgba(0, 0, 0, 0.4),
-            0 4px 12px rgba(0, 0, 0, 0.3);
+            0 12px 40px rgba(0, 0, 0, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+            0 1px 0 rgba(255, 255, 255, 0.15) inset;
     }
 
     :global(.toolbar-item) {
         background: transparent !important;
         border: none !important;
-        color: #ffffff !important;
+        color: rgba(226, 232, 240, 0.9) !important;
         width: 40px !important;
         height: 40px !important;
         border-radius: 50% !important;
@@ -903,13 +969,14 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.15s ease;
+        transition: all 0.2s ease;
         position: relative;
         padding: 0 !important;
     }
 
     :global(.toolbar-item:hover) {
-        background: rgba(255, 255, 255, 0.1) !important;
+        background: rgba(148, 163, 184, 0.15) !important;
+        color: #fff !important;
         transform: scale(1.05);
     }
 
@@ -921,7 +988,7 @@
         position: absolute;
         top: 2px;
         right: 2px;
-        background: #ff6b6b;
+        background: linear-gradient(135deg, #f43f5e, #e11d48);
         color: white;
         font-size: 10px;
         font-weight: 600;
@@ -930,29 +997,27 @@
         min-width: 16px;
         text-align: center;
         line-height: 1.2;
+        box-shadow: 0 2px 8px rgba(244, 63, 94, 0.4);
     }
 
-    /* Expanded Panel */
-    .toolbar-panel {
-        background: rgba(27, 31, 35, 0.95);
-        border: 1px solid rgba(56, 62, 68, 0.5);
-        border-radius: 12px;
-        min-width: 400px;
-        max-width: 500px;
+    /* ========================================
+       CONSOLE PANEL (Expanded State)
+       ======================================== */
+
+    .console-panel {
+        border-radius: 16px;
+        min-width: 420px;
+        max-width: 520px;
         max-height: 60vh;
-        box-shadow:
-            0 16px 64px rgba(0, 0, 0, 0.4),
-            0 8px 32px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(16px);
-        animation: expandPanel 0.2s ease;
+        animation: expandPanel 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         overflow: hidden;
-        color: white;
+        color: rgba(226, 232, 240, 0.95);
     }
 
     @keyframes expandPanel {
         from {
             opacity: 0;
-            transform: scale(0.9) translateY(10px);
+            transform: scale(0.92) translateY(10px);
         }
         to {
             opacity: 1;
@@ -961,17 +1026,16 @@
     }
 
     .panel-content {
-        padding: 3px;
+        padding: 4px;
     }
 
     /* Console Controls */
     .console-controls {
         display: flex;
-        gap: 6px;
-        padding: 5px;
+        gap: 8px;
+        padding: 8px 8px 12px;
         align-items: center;
-        border-bottom: 1px solid rgba(56, 62, 68, 0.3);
-        margin-bottom: 5px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
     }
 
     .filter-group {
@@ -980,33 +1044,33 @@
 
     :global(.log-filter) {
         width: 100% !important;
-        padding: 6px 8px !important;
-        border: 1px solid hsl(215 27.9% 25%) !important;
-        border-radius: 6px !important;
-        background: hsl(220 13% 9%) !important;
+        padding: 8px 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.2) !important;
+        border-radius: 10px !important;
+        background: rgba(30, 41, 59, 0.6) !important;
         font-size: 12px !important;
-        color: white !important;
-        font-weight: 400 !important;
-        transition: all 0.15s ease;
+        color: rgba(226, 232, 240, 0.9) !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease;
         display: flex !important;
         align-items: center;
         justify-content: space-between !important;
         gap: 8px;
         cursor: pointer;
         height: auto !important;
+        backdrop-filter: blur(8px);
     }
 
     :global(.log-filter:hover) {
-        border-color: hsl(215 27.9% 35%) !important;
-        background: hsl(220 13% 12%) !important;
+        border-color: rgba(148, 163, 184, 0.35) !important;
+        background: rgba(30, 41, 59, 0.8) !important;
     }
 
     :global(.log-filter:focus) {
         outline: none;
-        border-color: #60a5fa !important;
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+        border-color: rgba(99, 102, 241, 0.6) !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
     }
-
 
     .console-section {
         display: flex;
@@ -1015,32 +1079,68 @@
         min-height: 300px;
     }
 
-    /* Position Dropdown */
+    /* ========================================
+       DROPDOWN MENU
+       ======================================== */
+
+    :global(.dropdown-content) {
+        background: rgba(15, 23, 42, 0.9) !important;
+        backdrop-filter: blur(16px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        border-radius: 12px !important;
+        min-width: 180px;
+        z-index: 10002;
+        color: rgba(226, 232, 240, 0.95) !important;
+        box-shadow:
+            0 8px 32px rgba(0, 0, 0, 0.4),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
+    }
+
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]) {
+        color: rgba(226, 232, 240, 0.9) !important;
+        background: transparent;
+        transition: all 0.15s ease;
+        border-radius: 8px;
+        margin: 2px 4px;
+    }
+
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]:hover) {
+        background: rgba(148, 163, 184, 0.12) !important;
+        color: #fff !important;
+    }
+
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"][data-state="checked"]) {
+        background: rgba(99, 102, 241, 0.2) !important;
+        color: #a5b4fc !important;
+    }
+
+    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"] svg) {
+        color: #a5b4fc !important;
+        fill: #a5b4fc !important;
+    }
+
+    /* ========================================
+       POSITION DROPDOWN
+       ======================================== */
+
     .position-dropdown {
         position: absolute;
         right: 0;
-        background: rgba(27, 31, 35, 0.95);
-        border: 1px solid rgba(56, 62, 68, 0.5);
-        border-radius: 8px;
+        border-radius: 14px;
         padding: 12px;
-        box-shadow:
-            0 8px 32px rgba(0, 0, 0, 0.32),
-            0 2px 8px rgba(0, 0, 0, 0.24);
-        backdrop-filter: blur(12px);
         z-index: 10001;
-        animation: slideIn 0.2s ease;
+        animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* When toolbar is at bottom positions - show menu above */
-    .astro-dev-toolbar.bottom-left .position-dropdown,
-    .astro-dev-toolbar.bottom-right .position-dropdown,
-    .astro-dev-toolbar.bottom-center .position-dropdown {
+    .sv-console.bottom-left .position-dropdown,
+    .sv-console.bottom-right .position-dropdown,
+    .sv-console.bottom-center .position-dropdown {
         bottom: calc(100% + 12px);
     }
 
-    /* When toolbar is at top positions - show menu below */
-    .astro-dev-toolbar.top-left .position-dropdown,
-    .astro-dev-toolbar.top-right .position-dropdown {
+    .sv-console.top-left .position-dropdown,
+    .sv-console.top-right .position-dropdown {
         top: calc(100% + 12px);
     }
 
@@ -1048,20 +1148,20 @@
         display: grid;
         grid-template-columns: 1fr;
         gap: 4px;
-        min-width: 140px;
+        min-width: 150px;
     }
 
     :global(.position-option) {
         display: flex !important;
         align-items: center;
-        gap: 8px;
-        padding: 8px 12px !important;
+        gap: 10px;
+        padding: 10px 14px !important;
         background: transparent !important;
-        border: 1px solid rgba(56, 62, 68, 0.3) !important;
-        border-radius: 6px !important;
-        color: white !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        border-radius: 10px !important;
+        color: rgba(226, 232, 240, 0.9) !important;
         cursor: pointer;
-        transition: all 0.15s ease;
+        transition: all 0.2s ease;
         font-size: 12px !important;
         font-weight: 500 !important;
         text-align: left;
@@ -1070,30 +1170,65 @@
     }
 
     :global(.position-option:hover) {
-        background: rgba(255, 255, 255, 0.08) !important;
-        border-color: rgba(56, 62, 68, 0.6) !important;
+        background: rgba(148, 163, 184, 0.1) !important;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        color: #fff !important;
     }
 
     :global(.position-option.active) {
-        background: rgba(59, 130, 246, 0.15) !important;
-        border-color: rgba(59, 130, 246, 0.5) !important;
-        color: #60a5fa !important;
+        background: rgba(99, 102, 241, 0.15) !important;
+        border-color: rgba(99, 102, 241, 0.4) !important;
+        color: #a5b4fc !important;
     }
 
     :global(.position-option.active .corner) {
-        background: #60a5fa;
-        box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+        background: #a5b4fc;
+        box-shadow: 0 0 8px rgba(165, 180, 252, 0.5);
     }
 
+    .position-visual {
+        width: 22px;
+        height: 16px;
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 4px;
+        position: relative;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .corner {
+        width: 5px;
+        height: 5px;
+        background: rgba(148, 163, 184, 0.6);
+        border-radius: 2px;
+        position: absolute;
+        transition: all 0.2s ease;
+    }
+
+    .corner.top-left { top: 2px; left: 2px; }
+    .corner.top-center { top: 2px; left: 50%; transform: translateX(-50%); }
+    .corner.top-right { top: 2px; right: 2px; }
+    .corner.bottom-left { bottom: 2px; left: 2px; }
+    .corner.bottom-right { bottom: 2px; right: 2px; }
+    .corner.bottom-center { bottom: 2px; left: 50%; transform: translateX(-50%); }
+
+    /* ========================================
+       BUTTONS
+       ======================================== */
+
     :global(.clear-btn) {
-        background: hsl(0 84.2% 60.2%) !important;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(220, 38, 38, 0.9)) !important;
         color: white !important;
-        border-color: hsl(0 84.2% 60.2%) !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 500 !important;
+        box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+        transition: all 0.2s ease;
     }
 
     :global(.clear-btn:hover) {
-        background: hsl(0 84.2% 50%) !important;
-        border-color: hsl(0 84.2% 50%) !important;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 1), rgba(220, 38, 38, 1)) !important;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        transform: translateY(-1px);
     }
 
     :global(.clear-btn svg) {
@@ -1101,120 +1236,31 @@
         stroke: white !important;
     }
 
-    .position-visual {
-        width: 20px;
-        height: 16px;
-        background: rgba(56, 62, 68, 0.5);
-        border-radius: 3px;
-        position: relative;
-        border: 1px solid rgba(75, 85, 99, 0.6);
+    :global(.minimize-btn) {
+        color: rgba(226, 232, 240, 0.7) !important;
+        border-radius: 8px !important;
     }
 
-    .corner {
-        width: 4px;
-        height: 4px;
-        background: #60a5fa;
-        border-radius: 1px;
-        position: absolute;
+    :global(.minimize-btn:hover) {
+        background: rgba(148, 163, 184, 0.15) !important;
+        color: #fff !important;
     }
 
-    .corner.top-left {
-        top: 2px;
-        left: 2px;
-    }
-
-    .corner.top-right {
-        top: 2px;
-        right: 2px;
-    }
-
-    .corner.bottom-left {
-        bottom: 2px;
-        left: 2px;
-    }
-
-    .corner.bottom-right {
-        bottom: 2px;
-        right: 2px;
-    }
-
-    .corner.bottom-center {
-        bottom: 2px;
-        left: 50%;
-        transform: translateX(-50%);
-    }
-
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: scale(0.95);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1);
-        }
-    }
-
-    .console-section {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        min-height: 350px;
-    }
-
-    .console-controls {
-        display: flex;
-        gap: 5px;
-        padding: 5px 5px 0;
-        margin-bottom: 5px;
-        align-items: center;
-    }
-
-    .filter-group {
-        flex: 1;
-    }
-
-    :global(.dropdown-content) {
-        background: hsl(220 13% 9% / 0.994) !important;
-        border-color: hsl(215 27.9% 16.9% / 0.994) !important;
-        min-width: 180px;
-        z-index: 10002;
-        color: hsl(210 40% 98%) !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]) {
-        color: hsl(210 40% 98%) !important;
-        background: transparent;
-        transition: all 0.15s ease;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]:hover) {
-        background: rgba(255, 255, 255, 0.1) !important;
-        color: white !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"][data-state="checked"]) {
-        background: rgba(96, 165, 250, 0.15) !important;
-        color: #60a5fa !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"] svg) {
-        color: #60a5fa !important;
-        fill: #60a5fa !important;
-    }
-
+    /* ========================================
+       CONSOLE LOGS
+       ======================================== */
 
     .console-logs {
         flex: 1;
         overflow-y: auto;
-        background: rgba(0, 0, 0, 0.2);
-        border: 1px solid rgba(56, 62, 68, 0.3);
-        border-radius: 6px;
-        margin: 0 5px 5px;
-        padding: 5px;
+        background: rgba(2, 6, 23, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 12px;
+        margin: 0 8px 8px;
+        padding: 8px;
         font-family:
-            ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
-            "Liberation Mono", "Courier New", monospace;
+            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+            "Courier New", monospace;
         font-size: 12px;
         line-height: 1.4;
         scroll-behavior: smooth;
@@ -1223,34 +1269,34 @@
     }
 
     .log-entry {
-        margin: 2px 0;
-        padding: 4px;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(56, 62, 68, 0.2);
-        transition: all 0.15s ease;
+        margin: 4px 0;
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: rgba(30, 41, 59, 0.4);
+        border: 1px solid rgba(148, 163, 184, 0.08);
+        transition: all 0.2s ease;
         position: relative;
         overflow: hidden;
     }
 
     .log-entry:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(56, 62, 68, 0.4);
+        background: rgba(30, 41, 59, 0.6);
+        border-color: rgba(148, 163, 184, 0.15);
     }
 
     .log-entry.error {
-        border-left: 3px solid #ef4444;
-        background: rgba(239, 68, 68, 0.1);
+        border-left: 3px solid #f43f5e;
+        background: rgba(244, 63, 94, 0.08);
     }
 
     .log-entry.warn {
         border-left: 3px solid #f59e0b;
-        background: rgba(245, 158, 11, 0.1);
+        background: rgba(245, 158, 11, 0.08);
     }
 
     .log-entry.info {
-        border-left: 3px solid #60a5fa;
-        background: rgba(96, 165, 250, 0.1);
+        border-left: 3px solid #6366f1;
+        background: rgba(99, 102, 241, 0.08);
     }
 
     .log-header {
@@ -1258,48 +1304,43 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 8px;
-        opacity: 0.8;
+        opacity: 0.85;
     }
 
     .log-time {
         font-size: 11px;
-        color: hsl(210, 40%, 60%);
+        color: rgba(148, 163, 184, 0.8);
         font-weight: 500;
         font-family: inherit;
     }
 
     .log-level {
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 600;
         padding: 3px 8px;
-        border-radius: 4px;
+        border-radius: 6px;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        border: 1px solid;
+        letter-spacing: 0.5px;
     }
 
     .log-level[data-level="error"] {
-        background: hsl(0, 84%, 60%, 0.1);
-        color: hsl(0, 84%, 60%);
-        border-color: hsl(0, 84%, 60%, 0.3);
+        background: rgba(244, 63, 94, 0.15);
+        color: #fb7185;
     }
 
     .log-level[data-level="warn"] {
-        background: hsl(38, 92%, 50%, 0.1);
-        color: hsl(38, 92%, 50%);
-        border-color: hsl(38, 92%, 50%, 0.3);
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
     }
 
     .log-level[data-level="info"] {
-        background: hsl(217, 91%, 60%, 0.1);
-        color: hsl(217, 91%, 60%);
-        border-color: hsl(217, 91%, 60%, 0.3);
+        background: rgba(99, 102, 241, 0.15);
+        color: #a5b4fc;
     }
 
     .log-level[data-level="log"] {
-        background: hsl(210, 40%, 60%, 0.1);
-        color: hsl(210, 40%, 60%);
-        border-color: hsl(210, 40%, 60%, 0.3);
+        background: rgba(148, 163, 184, 0.15);
+        color: rgba(148, 163, 184, 0.9);
     }
 
     .log-content {
@@ -1311,11 +1352,15 @@
     .log-text {
         white-space: pre-wrap;
         word-break: break-word;
-        color: hsl(210, 40%, 95%);
+        color: rgba(226, 232, 240, 0.95);
         font-size: 12px;
         line-height: 1.5;
         font-family: inherit;
     }
+
+    /* ========================================
+       JSON DISPLAY
+       ======================================== */
 
     .log-json-container {
         margin: 4px 0;
@@ -1324,12 +1369,10 @@
     }
 
     .log-json {
-        background: hsl(220, 13%, 9%);
-        border: 1px solid hsl(215, 27.9%, 16.9%);
-        border-radius: 6px;
-        font-family:
-            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-            "Courier New", monospace;
+        background: rgba(2, 6, 23, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 10px;
+        font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
         font-size: 11px;
         line-height: 1.4;
         text-align: left;
@@ -1339,33 +1382,33 @@
     }
 
     .log-json:hover {
-        border-color: hsl(215, 27.9%, 20%);
-        background: hsl(220, 13%, 7%);
+        border-color: rgba(148, 163, 184, 0.2);
+        background: rgba(2, 6, 23, 0.8);
     }
 
     .log-json.collapsed {
-        padding: 8px 12px;
+        padding: 10px 14px;
     }
 
     .log-json.expanded {
-        padding: 8px 12px 12px;
+        padding: 10px 14px 14px;
     }
 
     .expand-header {
         display: flex;
         align-items: center;
-        gap: 6px;
-        margin-bottom: 6px;
+        gap: 8px;
+        margin-bottom: 8px;
         font-size: 10px;
-        color: hsl(210, 40%, 60%);
+        color: rgba(148, 163, 184, 0.7);
         font-weight: 600;
     }
 
     .expand-indicator {
-        color: hsl(210, 40%, 70%);
+        color: rgba(148, 163, 184, 0.8);
         font-family: monospace;
         font-size: 9px;
-        width: 8px;
+        width: 10px;
         text-align: center;
     }
 
@@ -1373,7 +1416,7 @@
         font-size: 9px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        opacity: 0.8;
+        opacity: 0.9;
     }
 
     .json-content {
@@ -1381,8 +1424,8 @@
         overflow-x: auto;
         max-height: 300px;
         overflow-y: auto;
-        padding-top: 4px;
-        border-top: 1px solid hsl(215, 27.9%, 16.9%);
+        padding-top: 8px;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
     }
 
     .json-preview {
@@ -1394,96 +1437,104 @@
         line-height: 1.3;
     }
 
-    /* JSON Syntax Highlighting - Dark Theme */
+    /* JSON Syntax Highlighting */
     :global(.json-key) {
-        color: hsl(217, 91%, 75%);
+        color: #93c5fd;
         font-weight: 600;
     }
 
     :global(.json-string) {
-        color: hsl(142, 76%, 73%);
+        color: #86efac;
     }
 
     :global(.json-number) {
-        color: hsl(268, 84%, 78%);
+        color: #c4b5fd;
     }
 
     :global(.json-boolean) {
-        color: hsl(38, 92%, 70%);
+        color: #fcd34d;
         font-weight: 600;
     }
 
     :global(.json-null) {
-        color: hsl(0, 84%, 70%);
+        color: #fb7185;
         font-weight: 600;
         font-style: italic;
     }
 
     :global(.json-bracket) {
-        color: hsl(210, 40%, 70%);
+        color: rgba(148, 163, 184, 0.8);
         font-weight: bold;
     }
 
-    :global(.json-comma) {
-        color: hsl(210, 40%, 70%);
-    }
-
+    :global(.json-comma),
     :global(.json-colon) {
-        color: hsl(210, 40%, 70%);
-        font-weight: bold;
+        color: rgba(148, 163, 184, 0.7);
     }
 
     .log-separator {
         margin: 0 6px;
-        color: hsl(210, 40%, 60%);
+        color: rgba(148, 163, 184, 0.5);
     }
+
+    /* ========================================
+       EMPTY STATE
+       ======================================== */
 
     .no-logs {
         text-align: center;
-        color: rgba(156, 163, 175, 0.8);
+        color: rgba(148, 163, 184, 0.6);
         margin: 40px 20px;
-        padding: 20px;
-        background: rgba(0, 0, 0, 0.1);
-        border: 1px dashed rgba(56, 62, 68, 0.3);
-        border-radius: 6px;
+        padding: 24px;
+        background: rgba(30, 41, 59, 0.3);
+        border: 1px dashed rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
         font-size: 12px;
     }
 
     .no-logs p {
-        margin: 8px 0 4px;
-        color: rgba(156, 163, 175, 1);
+        margin: 12px 0 4px;
+        color: rgba(148, 163, 184, 0.8);
         font-weight: 500;
     }
 
     .no-logs small {
-        color: rgba(156, 163, 175, 0.6);
+        color: rgba(148, 163, 184, 0.5);
     }
+
+    /* ========================================
+       ANIMATIONS
+       ======================================== */
 
     @keyframes slideIn {
         from {
             opacity: 0;
-            transform: translateY(20px) scale(0.95);
+            transform: scale(0.95) translateY(4px);
         }
         to {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: scale(1) translateY(0);
         }
     }
 
+    /* ========================================
+       RESPONSIVE
+       ======================================== */
+
     @media (max-width: 480px) {
-        .astro-dev-toolbar {
+        .sv-console {
             bottom: 16px;
             right: 16px;
         }
 
-        .toolbar-panel {
-            min-width: 256px;
-            max-width: calc(100vw - 26px);
+        .console-panel {
+            min-width: 280px;
+            max-width: calc(100vw - 32px);
         }
 
         .console-controls {
             flex-direction: column;
-            gap: 4px;
+            gap: 8px;
         }
 
         .filter-group {

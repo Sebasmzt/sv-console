@@ -1,16 +1,12 @@
 <script>
-    // Auto-initialize the floating dev cards
     import "../lib/auto.ts";
     import { onMount } from "svelte";
-
-    // Test both usage methods
-    let useManual = true;
+    import { Terminal } from "$lib/icons";
 
     onMount(() => {
-        // Test console logs - delayed to ensure console interception is ready
         setTimeout(() => {
             console.log("Welcome to the console log demo!");
-            console.log("app");  // Added test from the GitHub issue
+            console.log("app");
             console.info("This is an info message with some data:", {
                 user: "demo",
                 timestamp: new Date(),
@@ -18,15 +14,6 @@
             console.warn("This is a warning message");
             console.error("This is an error message");
         }, 100);
-
-        // Add some periodic logs for testing (to test 6-second cleanup)
-        // let counter = 0;
-        // const interval = setInterval(() => {
-        // 	console.log(`Auto log #${++counter} - will disappear after 6 seconds`);
-        // 	if (counter >= 10) {
-        // 		clearInterval(interval);
-        // 	}
-        // }, 1500); // Every 1.5 seconds
     });
 
     function testConsole() {
@@ -49,10 +36,10 @@
     }
 
     function testLogTypes() {
-        setTimeout(() => console.log("🟢 This is a regular log message"), 100);
+        setTimeout(() => console.log("This is a regular log message"), 100);
         setTimeout(
             () =>
-                console.info("🔵 Info with JSON:", {
+                console.info("Info with JSON:", {
                     user: "demo",
                     settings: { theme: "dark", notifications: true },
                     count: 42,
@@ -63,7 +50,7 @@
         );
         setTimeout(
             () =>
-                console.warn("🟡 Warning with array:", [
+                console.warn("Warning with array:", [
                     "item1",
                     "item2",
                     { nested: true },
@@ -72,7 +59,7 @@
         );
         setTimeout(
             () =>
-                console.error("🔴 Error with complex object:", {
+                console.error("Error with complex object:", {
                     error: "Authentication failed",
                     code: 401,
                     details: {
@@ -87,20 +74,20 @@
     }
 
     function testLogsWithNoTimeout() {
-        console.log("🟢 This is a regular log message");
-        console.info("🔵 Info with JSON:", {
+        console.log("This is a regular log message");
+        console.info("Info with JSON:", {
             user: "demo",
             settings: { theme: "dark", notifications: true },
             count: 42,
             active: false,
             metadata: null,
         });
-        console.warn("🟡 Warning with array:", [
+        console.warn("Warning with array:", [
             "item1",
             "item2",
             { nested: true },
         ]);
-        console.error("🔴 Error with complex object:", {
+        console.error("Error with complex object:", {
             error: "Authentication failed",
             code: 401,
             details: {
@@ -136,80 +123,219 @@
     }
 </script>
 
-<main>
-    <h1>Floating Console Demo</h1>
-    <p>
-        This demo shows the floating console with JSON highlighting. The console
-        appears automatically in development mode.
-    </p>
-
-    <div class="usage-info">
-        <h2>Usage Options:</h2>
-        <div class="usage-option">
-            <h3>Option 1: Manual Component (Current)</h3>
-            <pre><code
-                    >&lt;script&gt;
-
-&lt;/script&gt;
-
-&lt;FloatingDevCards /&gt;</code
-                ></pre>
-        </div>
-        <div class="usage-option">
-            <h3>Option 2: Auto-Initialization</h3>
-            <pre><code
-                    >// Just import once in your main app file
-import 'svelte-dev-floating/auto';</code
-                ></pre>
-            <p>
-                <small
-                    >The console will automatically appear in development mode!</small
-                >
+<div class="demo-page">
+    <main>
+        <!-- Hero Section -->
+        <header class="hero">
+            <div class="hero-icon">
+                <Terminal size={32} />
+            </div>
+            <h1>sv-console</h1>
+            <p class="tagline">
+                A floating developer console for Svelte 5 with JSON syntax highlighting
             </p>
-        </div>
-    </div>
+            <div class="badges">
+                <span class="badge">Svelte 5</span>
+                <span class="badge">Zero Dependencies</span>
+                <span class="badge">Dev Only</span>
+            </div>
+        </header>
 
-    <div class="button-group">
-        <button onclick={testLogTypes}>Test Log Types</button>
-        <button onclick={testJSONExamples}>Test JSON Highlighting</button>
-        <button onclick={testManyLogs}>Test Many Logs</button>
-        <button onclick={testConsole}>Mixed Test</button>
-        <button onclick={testLogsWithNoTimeout}
-            >Test Logs Without Timeout</button
-        >
-    </div>
-    <p>
-        <small>
-            • <strong>Log Types</strong>: Shows different log levels with JSON
-            objects<br />
-            • <strong>JSON Highlighting</strong>: Complex JSON structures with
-            syntax highlighting<br />
-            • <strong>Many Logs</strong>: Generates 25 logs to test management
-            (last 20 kept always)<br />
-            • <strong>Mixed Test</strong>: Various log types for testing<br />
-            • <strong>Auto Logs</strong>: Appear every 1.5s, older logs (beyond
-            last 20) deleted after 6s<br />
-            • Check the floating console in the bottom right corner for beautiful
-            JSON highlighting!
-        </small>
-    </p>
-</main>
+        <!-- Test Buttons -->
+        <section class="test-section">
+            <h2>Interactive Demo</h2>
+            <p class="section-desc">Click the buttons below to test different console outputs</p>
 
-<!-- FloatingDevCards will be auto-initialized -->
+            <div class="button-group">
+                <button class="btn btn-primary" onclick={testLogTypes}>
+                    Log Types
+                </button>
+                <button class="btn btn-secondary" onclick={testJSONExamples}>
+                    JSON Highlighting
+                </button>
+                <button class="btn btn-secondary" onclick={testManyLogs}>
+                    Batch Logs
+                </button>
+                <button class="btn btn-secondary" onclick={testConsole}>
+                    Mixed Test
+                </button>
+                <button class="btn btn-secondary" onclick={testLogsWithNoTimeout}>
+                    Instant Logs
+                </button>
+            </div>
+        </section>
+
+        <!-- Usage Section -->
+        <section class="usage-section">
+            <h2>Quick Start</h2>
+
+            <div class="usage-cards">
+                <div class="usage-card">
+                    <div class="card-header">
+                        <span class="step-number">1</span>
+                        <h3>Install</h3>
+                    </div>
+                    <pre><code>npm install sv-console</code></pre>
+                </div>
+
+                <div class="usage-card">
+                    <div class="card-header">
+                        <span class="step-number">2</span>
+                        <h3>Auto Import</h3>
+                    </div>
+                    <pre><code><span class="code-comment">// In your +layout.svelte or main file</span>
+<span class="code-keyword">import</span> <span class="code-string">'sv-console/auto'</span>;</code></pre>
+                    <p class="card-note">Console appears automatically in dev mode</p>
+                </div>
+
+                <div class="usage-card">
+                    <div class="card-header">
+                        <span class="step-number">OR</span>
+                        <h3>Manual Component</h3>
+                    </div>
+                    <pre><code><span class="code-keyword">import</span> {"{"} FloatingDevCards {"}"} <span class="code-keyword">from</span> <span class="code-string">'sv-console'</span>;
+
+<span class="code-tag">&lt;FloatingDevCards /&gt;</span></code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="features-section">
+            <h2>Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h4>JSON Highlighting</h4>
+                    <p>Beautiful syntax highlighting for JSON objects</p>
+                </div>
+                <div class="feature-card">
+                    <h4>Auto Cleanup</h4>
+                    <p>Old logs auto-delete after 6 seconds (keeps last 20)</p>
+                </div>
+                <div class="feature-card">
+                    <h4>Draggable</h4>
+                    <p>Drag to reposition, persists in localStorage</p>
+                </div>
+                <div class="feature-card">
+                    <h4>Filter Logs</h4>
+                    <p>Filter by log, info, warn, or error levels</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>
+                Built with Svelte 5 &middot;
+                <a href="https://github.com/SebasGDEV/sv-console" target="_blank" rel="noopener">GitHub</a> &middot;
+                <a href="https://www.npmjs.com/package/sv-console" target="_blank" rel="noopener">npm</a>
+            </p>
+        </footer>
+    </main>
+</div>
 
 <style>
+    /* ========================================
+       CLEAN MINIMAL DESIGN
+       ======================================== */
+
+    .demo-page {
+        --color-bg: #fafafa;
+        --color-surface: #ffffff;
+        --color-border: #e5e7eb;
+        --color-text: #1f2937;
+        --color-text-muted: #6b7280;
+        --color-primary: #6366f1;
+        --color-primary-hover: #4f46e5;
+
+        min-height: 100vh;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
     main {
-        text-align: center;
-        padding: 1em;
-        max-width: 100%;
+        max-width: 720px;
         margin: 0 auto;
+        padding: 60px 24px 40px;
+    }
+
+    /* ========================================
+       HERO SECTION
+       ======================================== */
+
+    .hero {
+        text-align: center;
+        margin-bottom: 48px;
+    }
+
+    .hero-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 64px;
+        height: 64px;
+        background: var(--color-primary);
+        border-radius: 16px;
+        margin-bottom: 20px;
+        color: white;
     }
 
     h1 {
-        color: #ff3e00;
-        text-transform: uppercase;
-        font-size: 4em;
-        font-weight: 100;
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0 0 12px;
+        color: var(--color-text);
+    }
+
+    .tagline {
+        font-size: 1.1rem;
+        color: var(--color-text-muted);
+        margin: 0 0 20px;
+        line-height: 1.6;
+    }
+
+    .badges {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .badge {
+        padding: 4px 12px;
+        background: #f3f4f6;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--color-text-muted);
+    }
+
+    /* ========================================
+       TEST SECTION
+       ======================================== */
+
+    .test-section {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        padding: 32px;
+        margin-bottom: 40px;
+        text-align: center;
+    }
+
+    .test-section h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 8px;
+    }
+
+    .section-desc {
+        color: var(--color-text-muted);
+        margin: 0 0 24px;
+        font-size: 0.95rem;
     }
 
     .button-group {
@@ -217,66 +343,204 @@ import 'svelte-dev-floating/auto';</code
         gap: 10px;
         justify-content: center;
         flex-wrap: wrap;
-        margin: 20px 0;
     }
 
-    button {
-        padding: 8px 16px;
-        background: #ff3e00;
-        color: white;
+    .btn {
+        padding: 10px 18px;
         border: none;
-        border-radius: 4px;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 500;
         cursor: pointer;
-        font-size: 14px;
-        transition: background 0.2s ease;
+        transition: all 0.15s ease;
     }
 
-    button:hover {
-        background: #cc3200;
+    .btn-primary {
+        background: var(--color-primary);
+        color: white;
     }
 
-    .usage-info {
-        background: #f8f9fa;
+    .btn-primary:hover {
+        background: var(--color-primary-hover);
+    }
+
+    .btn-secondary {
+        background: #f3f4f6;
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+    }
+
+    .btn-secondary:hover {
+        background: #e5e7eb;
+    }
+
+    /* ========================================
+       USAGE SECTION
+       ======================================== */
+
+    .usage-section {
+        margin-bottom: 40px;
+    }
+
+    .usage-section h2 {
+        text-align: center;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 20px;
+    }
+
+    .usage-cards {
+        display: grid;
+        gap: 12px;
+    }
+
+    .usage-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
         padding: 20px;
-        border-radius: 8px;
-        margin: 20px 0;
-        border: 1px solid #e9ecef;
     }
 
-    .usage-info h2 {
-        margin-top: 0;
-        color: #333;
-        font-size: 1.5em;
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
     }
 
-    .usage-option {
-        margin: 16px 0;
-        padding: 16px;
-        background: white;
+    .step-number {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background: var(--color-primary);
         border-radius: 6px;
-        border: 1px solid #e9ecef;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: white;
     }
 
-    .usage-option h3 {
-        margin-top: 0;
-        color: #495057;
-        font-size: 1.1em;
+    .card-header h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0;
     }
 
-    .usage-option pre {
-        background: #f8f9fa;
-        padding: 12px;
-        border-radius: 4px;
-        font-size: 13px;
+    .usage-card pre {
+        background: #f9fafb;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 14px;
+        margin: 0;
         overflow-x: auto;
-        border: 1px solid #e9ecef;
+        font-size: 0.85rem;
+        line-height: 1.6;
     }
 
-    .usage-option code {
-        color: #e83e8c;
+    .usage-card code {
+        font-family: "SF Mono", Monaco, "Cascadia Code", Consolas, monospace;
+        color: var(--color-text);
     }
 
-    .usage-option p {
-        margin: 8px 0 0;
+    .code-keyword { color: #7c3aed; }
+    .code-string { color: #059669; }
+    .code-comment { color: #9ca3af; }
+    .code-tag { color: #2563eb; }
+
+    .card-note {
+        margin: 10px 0 0;
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+    }
+
+    /* ========================================
+       FEATURES SECTION
+       ======================================== */
+
+    .features-section {
+        margin-bottom: 40px;
+    }
+
+    .features-section h2 {
+        text-align: center;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 20px;
+    }
+
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    @media (max-width: 500px) {
+        .features-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .feature-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 20px;
+    }
+
+    .feature-card h4 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 0 0 6px;
+    }
+
+    .feature-card p {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        margin: 0;
+        line-height: 1.5;
+    }
+
+    /* ========================================
+       FOOTER
+       ======================================== */
+
+    .footer {
+        text-align: center;
+        padding-top: 20px;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .footer p {
+        font-size: 0.9rem;
+        color: var(--color-text-muted);
+        margin: 0;
+    }
+
+    .footer a {
+        color: var(--color-primary);
+        text-decoration: none;
+    }
+
+    .footer a:hover {
+        text-decoration: underline;
+    }
+
+    /* ========================================
+       RESPONSIVE
+       ======================================== */
+
+    @media (max-width: 640px) {
+        main {
+            padding: 40px 16px 32px;
+        }
+
+        h1 {
+            font-size: 2rem;
+        }
+
+        .test-section {
+            padding: 24px 16px;
+        }
     }
 </style>
