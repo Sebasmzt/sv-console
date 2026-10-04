@@ -1,7 +1,7 @@
 <script>
-    import "../lib/auto.ts";
+    import "#lib/auto.js";
     import { onMount } from "svelte";
-    import { Terminal } from "$lib/icons";
+    import { Terminal } from "#lib/icons/index.js";
 
     onMount(() => {
         setTimeout(() => {

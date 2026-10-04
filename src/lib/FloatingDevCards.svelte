@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { Terminal, Minus, Move, ChevronRight } from "$lib/icons";
+    import { Terminal, Minus, Move, ChevronRight } from "#lib/icons/index.js";
 
     interface Props {
         startMinimized?: boolean;
@@ -166,7 +166,7 @@
         isVisible = !isVisible;
     }
 
-    function togglePositionMenu(event?: Event) {
+    function togglePositionMenu(event: Event) {
         if (event) {
             event.stopPropagation();
         }
