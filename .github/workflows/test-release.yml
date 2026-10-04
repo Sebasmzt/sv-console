@@ -1,24 +1,24 @@
 name: Test Release (Next Branch)
 
-# on:
-#   push:
-#     branches: [next]
-#     paths-ignore:
-#       - '**.md'
-#       - 'docs/**'
-#       - '.vscode/**'
-#   workflow_dispatch:
-#     inputs:
-#       prerelease_type:
-#         description: 'Pre-release type'
-#         required: true
-#         default: 'prerelease'
-#         type: choice
-#         options:
-#           - prerelease
-#           - beta
-#           - alpha
-#           - rc
+on:
+  # push:
+  #   branches: [next]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  #     - '.vscode/**'
+  workflow_dispatch:
+    inputs:
+      prerelease_type:
+        description: 'Pre-release type'
+        required: true
+        default: 'prerelease'
+        type: choice
+        options:
+          - prerelease
+          - beta
+          - alpha
+          - rc
 
 jobs:
   test-release:
