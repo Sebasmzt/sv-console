@@ -58,7 +58,7 @@
     "oxc-transform": "^0.80.0",
     "oxfmt": "^0.71.0",
     "oxlint": "^1.42.0",
-    "postcss": "8.5.6",
+    "postcss": "8.5.23",
     "publint": "0.2.12",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",
