@@ -1,8 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { Terminal, Minus, X, Move, ChevronDown } from "$lib/icons";
-    import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-    import { Button } from "$lib/components/ui/button";
+    import { Terminal, Minus, Move, ChevronRight } from "$lib/icons";
 
     interface Props {
         startMinimized?: boolean;
@@ -50,11 +48,23 @@
 
     // Drag state
     let isDragging = $state(false);
-    let dragStartX = 0;
-    let dragStartY = 0;
+    let dragStartX = $state(0);
+    let dragStartY = $state(0);
     let dragCurrentX = $state(0);
     let dragCurrentY = $state(0);
-    let pillElement: HTMLDivElement | null = null;
+    let pillElement: HTMLDivElement | null = $state(null);
+    let logsElement: HTMLDivElement | null = $state(null);
+    let suppressNextClick = false;
+
+    const filters = ["all", "log", "info", "warn", "error"] as const;
+    const positions = [
+        "top-left",
+        "top-center",
+        "top-right",
+        "bottom-left",
+        "bottom-center",
+        "bottom-right",
+    ] as const;
 
     const originalConsole = {
         log: console.log,
@@ -123,6 +133,7 @@
                 interceptConsole();
                 cleanupInterval = setInterval(cleanupOldLogs, 10000);
                 document.addEventListener("click", handleClickOutside);
+                document.addEventListener("keydown", handleKeydown);
             }
         }
     });
@@ -133,8 +144,23 @@
         }
         if (isBrowser) {
             document.removeEventListener("click", handleClickOutside);
+            document.removeEventListener("keydown", handleKeydown);
         }
     });
+
+    function handleKeydown(event: KeyboardEvent) {
+        if (event.key === "Escape" && showPositionMenu) {
+            showPositionMenu = false;
+        }
+    }
+
+    function handlePositionClick(event: MouseEvent) {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            return;
+        }
+        togglePositionMenu(event);
+    }
 
     function toggleVisibility() {
         isVisible = !isVisible;
@@ -269,6 +295,11 @@
 
         selectPosition(newPosition);
 
+        // The pointer release also fires a click on the handle; ignore it
+        suppressNextClick = true;
+        setTimeout(() => {
+            suppressNextClick = false;
+        }, 0);
         isDragging = false;
         isPotentialDrag = false;
         dragCurrentX = 0;
@@ -410,17 +441,22 @@
     }
 
     function scrollToBottom() {
-        if (isBrowser) {
-            const consoleContainer = document.querySelector(".console-logs");
-            if (consoleContainer) {
-                consoleContainer.scrollTop = consoleContainer.scrollHeight;
-            }
+        if (logsElement) {
+            logsElement.scrollTop = logsElement.scrollHeight;
         }
     }
 
     function clearLogs() {
         logs = [];
     }
+
+    let levelCounts = $derived({
+        all: logs.length,
+        log: logs.filter((l) => l.level === "log").length,
+        info: logs.filter((l) => l.level === "info").length,
+        warn: logs.filter((l) => l.level === "warn").length,
+        error: logs.filter((l) => l.level === "error").length,
+    });
 
     let filteredLogs = $derived(
         logFilter === "all"
@@ -438,19 +474,6 @@
         });
     }
 
-    function getLogLevelColor(level: LogEntry["level"]) {
-        switch (level) {
-            case "error":
-                return "#ff4444";
-            case "warn":
-                return "#ffaa00";
-            case "info":
-                return "#4488ff";
-            default:
-                return "inherit";
-        }
-    }
-
     function toggleExpansion(logId: string, argIndex: number) {
         logs = logs.map((log) => {
             if (log.id === logId) {
@@ -466,6 +489,20 @@
             }
             return log;
         });
+    }
+
+    function describeJSON(content: string): string {
+        try {
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed)) return `Array(${parsed.length})`;
+            if (parsed && typeof parsed === "object") {
+                const n = Object.keys(parsed).length;
+                return `Object, ${n} ${n === 1 ? "key" : "keys"}`;
+            }
+        } catch {
+            // Not parseable, fall through
+        }
+        return "JSON";
     }
 
     function getCollapsedPreview(content: string, maxLength = 80): string {
@@ -593,255 +630,178 @@
     }
 </script>
 
+
 {#if isDev}
     <div
-        class="sv-console"
-        class:top-left={position === "top-left"}
-        class:top-right={position === "top-right"}
-        class:bottom-left={position === "bottom-left"}
-        class:bottom-right={position === "bottom-right"}
-        class:bottom-center={position === "bottom-center"}
+        class="sv-console {position}"
+        class:is-top={position.startsWith("top")}
     >
         {#if isVisible}
-            <div class="console-panel glass">
-                <div class="panel-content">
-                    <div class="console-section">
-                        <div class="console-controls">
-                            <div class="filter-group">
-                                <DropdownMenu.Root>
-                                    <DropdownMenu.Trigger class="log-filter">
-                                        <span>
-                                            {#if logFilter === "all"}
-                                                All ({logs.length})
-                                            {:else if logFilter === "log"}
-                                                Log ({logs.filter((l) => l.level === "log").length})
-                                            {:else if logFilter === "info"}
-                                                Info ({logs.filter((l) => l.level === "info").length})
-                                            {:else if logFilter === "warn"}
-                                                Warn ({logs.filter((l) => l.level === "warn").length})
-                                            {:else if logFilter === "error"}
-                                                Error ({logs.filter((l) => l.level === "error").length})
-                                            {/if}
-                                        </span>
-                                        <ChevronDown size={14} />
-                                    </DropdownMenu.Trigger>
-                                    <DropdownMenu.Content align="start" class="dropdown-content glass">
-                                        <DropdownMenu.RadioGroup bind:value={logFilter}>
-                                            <DropdownMenu.RadioItem value="all">
-                                                All ({logs.length})
-                                            </DropdownMenu.RadioItem>
-                                            <DropdownMenu.RadioItem value="log">
-                                                Log ({logs.filter((l) => l.level === "log").length})
-                                            </DropdownMenu.RadioItem>
-                                            <DropdownMenu.RadioItem value="info">
-                                                Info ({logs.filter((l) => l.level === "info").length})
-                                            </DropdownMenu.RadioItem>
-                                            <DropdownMenu.RadioItem value="warn">
-                                                Warn ({logs.filter((l) => l.level === "warn").length})
-                                            </DropdownMenu.RadioItem>
-                                            <DropdownMenu.RadioItem value="error">
-                                                Error ({logs.filter((l) => l.level === "error").length})
-                                            </DropdownMenu.RadioItem>
-                                        </DropdownMenu.RadioGroup>
-                                    </DropdownMenu.Content>
-                                </DropdownMenu.Root>
-                            </div>
-                            <Button variant="destructive" size="sm" class="clear-btn" onclick={clearLogs}>
-                                <X size={14} />
-                                Clear
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onclick={toggleVisibility}
-                                class="minimize-btn"
-                            >
-                                <Minus size={16} />
-                            </Button>
-                        </div>
-
-                        <div class="console-logs">
-                            {#each filteredLogs as log (log.id)}
-                                <div
-                                    class="log-entry"
-                                    class:error={log.level === "error"}
-                                    class:warn={log.level === "warn"}
-                                    class:info={log.level === "info"}
+            <section class="shell panel" aria-label="Console">
+                <div class="core panel-core">
+                    <header class="toolbar">
+                        <div class="tabs" role="tablist" aria-label="Filter logs">
+                            {#each filters as filter}
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    class="tab"
+                                    class:active={logFilter === filter}
+                                    aria-selected={logFilter === filter}
+                                    onclick={() => (logFilter = filter)}
                                 >
-                                    <div class="log-header">
-                                        <span class="log-time">{formatTime(log.timestamp)}</span>
-                                        <span class="log-level" data-level={log.level}>
-                                            {log.level.toUpperCase()}
-                                        </span>
-                                    </div>
-                                    <div class="log-content">
-                                        {#each log.args as arg, index}
-                                            {#if index > 0}<span class="log-separator"> </span>{/if}
-                                            {#if arg.type === "json"}
-                                                <div class="log-json-container">
-                                                    {#if arg.expanded}
-                                                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                                                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                                                        <div
-                                                            class="log-json expanded"
-                                                            onclick={() => toggleExpansion(log.id, index)}
-                                                        >
-                                                            <div class="expand-header">
-                                                                <span class="expand-indicator">▼</span>
-                                                                <span class="expand-text">
-                                                                    {arg.content.split("\n").length > 6
-                                                                        ? "Large JSON Object (click to compact)"
-                                                                        : "JSON Object (click to collapse)"}
-                                                                </span>
-                                                            </div>
-                                                            <div class="json-content">
-                                                                {@html highlightJSON(arg.content)}
-                                                            </div>
-                                                        </div>
-                                                    {:else}
-                                                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                                                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                                                        <div
-                                                            class="log-json collapsed"
-                                                            onclick={() => toggleExpansion(log.id, index)}
-                                                        >
-                                                            <div class="expand-header">
-                                                                <span class="expand-indicator">▶</span>
-                                                                <span class="expand-text">
-                                                                    {arg.content.split("\n").length > 6
-                                                                        ? "Large JSON Object (click to expand)"
-                                                                        : "JSON Object (click to expand)"}
-                                                                </span>
-                                                            </div>
-                                                            <div class="json-preview">
-                                                                {@html highlightJSON(getCollapsedPreview(arg.content))}
-                                                            </div>
-                                                        </div>
-                                                    {/if}
-                                                </div>
-                                            {:else}
-                                                <span class="log-text">{arg.content}</span>
-                                            {/if}
-                                        {/each}
-                                    </div>
-                                </div>
-                            {:else}
-                                <div class="no-logs">
-                                    <Terminal size={24} />
-                                    <p>No logs to display</p>
-                                    <small>Console logs will appear here</small>
-                                </div>
+                                    <span class="tab-label">{filter}</span>
+                                    <span
+                                        class="tab-count"
+                                        data-level={filter}
+                                        class:has-items={levelCounts[filter] > 0}
+                                    >
+                                        {levelCounts[filter]}
+                                    </span>
+                                </button>
                             {/each}
                         </div>
+                        <div class="actions">
+                            <button
+                                type="button"
+                                class="text-btn"
+                                onclick={clearLogs}
+                                disabled={logs.length === 0}
+                            >
+                                Clear
+                            </button>
+                            <button
+                                type="button"
+                                class="icon-btn"
+                                aria-label="Minimize console"
+                                title="Minimize"
+                                onclick={toggleVisibility}
+                            >
+                                <Minus size={16} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div class="logs" bind:this={logsElement}>
+                        {#each filteredLogs as log (log.id)}
+                            <article class="row" data-level={log.level}>
+                                <time
+                                    class="time"
+                                    datetime={log.timestamp.toISOString()}
+                                >
+                                    {formatTime(log.timestamp)}
+                                </time>
+                                <div class="body">
+                                    <span class="sr-only">{log.level}:</span>
+                                    {#each log.args as arg, index}
+                                        {#if arg.type === "json"}
+                                            <div class="json" class:open={arg.expanded}>
+                                                <button
+                                                    type="button"
+                                                    class="json-toggle"
+                                                    aria-expanded={arg.expanded}
+                                                    onclick={() => toggleExpansion(log.id, index)}
+                                                >
+                                                    <span class="chevron">
+                                                        <ChevronRight size={12} />
+                                                    </span>
+                                                    <span class="json-kind">
+                                                        {describeJSON(arg.content)}
+                                                    </span>
+                                                    {#if !arg.expanded}
+                                                        <span class="json-preview">
+                                                            {@html highlightJSON(getCollapsedPreview(arg.content))}
+                                                        </span>
+                                                    {/if}
+                                                </button>
+                                                {#if arg.expanded}
+                                                    <pre class="json-content">{@html highlightJSON(arg.content)}</pre>
+                                                {/if}
+                                            </div>
+                                        {:else}
+                                            <span class="text">{arg.content}</span>{#if index < log.args.length - 1}{" "}{/if}
+                                        {/if}
+                                    {/each}
+                                </div>
+                            </article>
+                        {:else}
+                            <div class="empty">
+                                <span class="empty-icon"><Terminal size={18} /></span>
+                                <p class="empty-title">
+                                    {logFilter === "all" ? "No logs yet" : `No ${logFilter} messages`}
+                                </p>
+                                <p class="empty-hint">
+                                    Calls to console.log, info, warn and error show up here.
+                                </p>
+                            </div>
+                        {/each}
                     </div>
                 </div>
-            </div>
+            </section>
         {:else}
             <div
-                class="toolbar-pill glass"
+                class="shell pill position-menu-container"
                 class:dragging={isDragging}
                 bind:this={pillElement}
-                style={isDragging ? `position: fixed; left: ${dragCurrentX - 50}px; top: ${dragCurrentY - 28}px; transform: none;` : ''}
+                style={isDragging
+                    ? `transform: translate(${dragCurrentX - dragStartX}px, ${dragCurrentY - dragStartY}px) scale(1.04);`
+                    : ""}
             >
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="toolbar-item console-btn"
-                    onclick={toggleVisibility}
-                    title="Console ({logs.length} logs)"
-                >
-                    <Terminal size={20} />
-                    {#if logs.length > 0}
-                        <span class="badge">{logs.length}</span>
-                    {/if}
-                </Button>
-
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                    class="drag-handle"
-                    onmousedown={handleMoveButtonDragStart}
-                    ontouchstart={handleMoveButtonDragStart}
-                    title="Drag to reposition or click for menu"
-                >
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        class="toolbar-item position-btn"
-                        onclick={(e) => { if (!isDragging) togglePositionMenu(e); }}
+                <div class="core pill-core">
+                    <button
+                        type="button"
+                        class="pill-btn"
+                        onclick={toggleVisibility}
+                        aria-label="Open console ({logs.length} logs)"
+                        title="Open console"
                     >
-                        <Move size={20} />
-                    </Button>
+                        <Terminal size={18} />
+                        {#if logs.length > 0}
+                            <span
+                                class="pill-count"
+                                class:has-errors={levelCounts.error > 0}
+                            >
+                                {logs.length}
+                            </span>
+                        {/if}
+                    </button>
+                    <span class="pill-divider" aria-hidden="true"></span>
+                    <button
+                        type="button"
+                        class="pill-btn handle"
+                        aria-label="Move console"
+                        aria-haspopup="menu"
+                        aria-expanded={showPositionMenu}
+                        title="Drag to move, click to pick a corner"
+                        onmousedown={handleMoveButtonDragStart}
+                        ontouchstart={handleMoveButtonDragStart}
+                        onclick={handlePositionClick}
+                    >
+                        <Move size={16} />
+                    </button>
                 </div>
 
                 {#if showPositionMenu}
-                    <div class="position-dropdown glass">
-                        <div class="position-grid">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'top-left' ? 'active' : ''}"
-                                onclick={() => selectPosition("top-left")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner top-left"></div>
-                                </div>
-                                <span>Top Left</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'top-center' ? 'active' : ''}"
-                                onclick={() => selectPosition("top-center")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner top-center"></div>
-                                </div>
-                                <span>Top Center</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'top-right' ? 'active' : ''}"
-                                onclick={() => selectPosition("top-right")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner top-right"></div>
-                                </div>
-                                <span>Top Right</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'bottom-left' ? 'active' : ''}"
-                                onclick={() => selectPosition("bottom-left")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner bottom-left"></div>
-                                </div>
-                                <span>Bottom Left</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'bottom-right' ? 'active' : ''}"
-                                onclick={() => selectPosition("bottom-right")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner bottom-right"></div>
-                                </div>
-                                <span>Bottom Right</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="position-option {position === 'bottom-center' ? 'active' : ''}"
-                                onclick={() => selectPosition("bottom-center")}
-                            >
-                                <div class="position-visual">
-                                    <div class="corner bottom-center"></div>
-                                </div>
-                                <span>Bottom Center</span>
-                            </Button>
+                    <div class="shell menu" role="menu" aria-label="Console position">
+                        <div class="core menu-core">
+                            <div class="pos-grid">
+                                {#each positions as option}
+                                    <button
+                                        type="button"
+                                        role="menuitemradio"
+                                        class="pos"
+                                        class:active={position === option}
+                                        aria-checked={position === option}
+                                        aria-label={option.replace("-", " ")}
+                                        title={option.replace("-", " ")}
+                                        onclick={() => selectPosition(option)}
+                                    >
+                                        <span class="pos-screen">
+                                            <span class="pos-mark {option}"></span>
+                                        </span>
+                                    </button>
+                                {/each}
+                            </div>
                         </div>
                     </div>
                 {/if}
@@ -851,694 +811,660 @@
 {/if}
 
 <style>
-    /* ========================================
-       GLASSMORPHISM DESIGN SYSTEM
-       ======================================== */
+    /* ----------------------------------------
+       Tokens (light first, dark via system)
+       ---------------------------------------- */
 
     .sv-console {
+        --sv-ease: cubic-bezier(0.32, 0.72, 0, 1);
+        --sv-font: "Geist", ui-sans-serif, system-ui, -apple-system,
+            "Segoe UI", sans-serif;
+        --sv-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono",
+            Menlo, Consolas, monospace;
+
+        --sv-shell: rgb(244 244 245 / 0.62);
+        --sv-shell-ring: rgb(24 24 27 / 0.07);
+        --sv-core: rgb(255 255 255 / 0.94);
+        --sv-core-highlight: inset 0 1px 0 rgb(255 255 255 / 0.9);
+        --sv-shadow: 0 1px 2px rgb(24 24 27 / 0.04),
+            0 18px 40px -12px rgb(24 24 27 / 0.16);
+
+        --sv-text: #18181b;
+        --sv-muted: #71717a;
+        --sv-faint: #a1a1aa;
+        --sv-line: rgb(24 24 27 / 0.06);
+        --sv-hover: rgb(24 24 27 / 0.045);
+        --sv-active: rgb(24 24 27 / 0.08);
+
+        --sv-error: #dc2626;
+        --sv-error-bg: rgb(220 38 38 / 0.05);
+        --sv-warn: #b45309;
+        --sv-warn-bg: rgb(217 119 6 / 0.06);
+        --sv-info: #2563eb;
+
+        --sv-json-key: #3f3f46;
+        --sv-json-string: #15803d;
+        --sv-json-number: #0369a1;
+        --sv-json-boolean: #be185d;
+
         position: fixed;
         z-index: 10000;
-        font-family:
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            Roboto,
-            "Helvetica Neue",
-            Arial,
-            "Noto Sans",
-            sans-serif;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        font-family: var(--sv-font);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--sv-text);
+        -webkit-font-smoothing: antialiased;
     }
 
-    /* Glassmorphism base class */
-    .glass {
-        background: rgba(15, 23, 42, 0.75);
-        backdrop-filter: blur(16px) saturate(180%);
-        -webkit-backdrop-filter: blur(16px) saturate(180%);
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        box-shadow:
-            0 8px 32px rgba(0, 0, 0, 0.4),
-            0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-            0 1px 0 rgba(255, 255, 255, 0.1) inset;
+    @media (prefers-color-scheme: dark) {
+        .sv-console {
+            --sv-shell: rgb(39 39 42 / 0.5);
+            --sv-shell-ring: rgb(255 255 255 / 0.07);
+            --sv-core: rgb(15 15 17 / 0.92);
+            --sv-core-highlight: inset 0 1px 0 rgb(255 255 255 / 0.06);
+            --sv-shadow: 0 1px 2px rgb(0 0 0 / 0.3),
+                0 24px 48px -12px rgb(0 0 0 / 0.55);
+
+            --sv-text: #f4f4f5;
+            --sv-muted: #a1a1aa;
+            --sv-faint: #71717a;
+            --sv-line: rgb(255 255 255 / 0.06);
+            --sv-hover: rgb(255 255 255 / 0.045);
+            --sv-active: rgb(255 255 255 / 0.09);
+
+            --sv-error: #f87171;
+            --sv-error-bg: rgb(248 113 113 / 0.07);
+            --sv-warn: #fbbf24;
+            --sv-warn-bg: rgb(251 191 36 / 0.06);
+            --sv-info: #60a5fa;
+
+            --sv-json-key: #d4d4d8;
+            --sv-json-string: #86efac;
+            --sv-json-number: #7dd3fc;
+            --sv-json-boolean: #f9a8d4;
+        }
     }
 
-    /* Position variants */
-    .sv-console.top-left {
-        top: 20px;
-        left: 20px;
+    .sv-console button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        margin: 0;
+        padding: 0;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
     }
 
-    .sv-console.top-right {
-        top: 20px;
-        right: 20px;
+    .sv-console button:focus-visible {
+        outline: 2px solid var(--sv-info);
+        outline-offset: 2px;
     }
 
-    .sv-console.bottom-left {
-        bottom: 20px;
-        left: 20px;
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
     }
 
-    .sv-console.bottom-right {
-        bottom: 20px;
-        right: 20px;
-    }
+    /* ----------------------------------------
+       Placement
+       ---------------------------------------- */
 
+    .sv-console.top-left { top: 20px; left: 20px; }
+    .sv-console.top-right { top: 20px; right: 20px; }
+    .sv-console.bottom-left { bottom: 20px; left: 20px; }
+    .sv-console.bottom-right { bottom: 20px; right: 20px; }
+
+    .sv-console.top-center,
     .sv-console.bottom-center {
-        bottom: 20px;
         left: 50%;
         transform: translateX(-50%);
     }
+    .sv-console.top-center { top: 20px; }
+    .sv-console.bottom-center { bottom: 20px; }
 
-    .sv-console.top-center {
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
+    /* ----------------------------------------
+       Double bezel: outer shell + inner core
+       ---------------------------------------- */
+
+    .shell {
+        background: var(--sv-shell);
+        box-shadow: 0 0 0 1px var(--sv-shell-ring), var(--sv-shadow);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
     }
 
-    /* ========================================
-       TOOLBAR PILL (Minimized State)
-       ======================================== */
+    .core {
+        background: var(--sv-core);
+        box-shadow: var(--sv-core-highlight), 0 0 0 1px var(--sv-line);
+    }
 
-    .toolbar-pill {
-        border-radius: 50px;
-        padding: 8px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
+    /* ----------------------------------------
+       Minimized pill
+       ---------------------------------------- */
+
+    .pill {
         position: relative;
-        transition: all 0.2s ease;
+        border-radius: 999px;
+        padding: 3px;
         user-select: none;
+        transition: transform 0.5s var(--sv-ease);
     }
 
-    .toolbar-pill.dragging {
-        opacity: 0.9;
-        z-index: 10001;
+    .pill.dragging {
         transition: none;
-    }
-
-    .drag-handle {
-        cursor: grab;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .drag-handle:active {
         cursor: grabbing;
     }
 
-    .toolbar-pill:hover {
-        background: rgba(15, 23, 42, 0.85);
-        border-color: rgba(148, 163, 184, 0.25);
-        box-shadow:
-            0 12px 40px rgba(0, 0, 0, 0.5),
-            0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-            0 1px 0 rgba(255, 255, 255, 0.15) inset;
+    .pill-core {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px;
+        border-radius: 999px;
     }
 
-    :global(.toolbar-item) {
-        background: transparent !important;
-        border: none !important;
-        color: rgba(226, 232, 240, 0.9) !important;
-        width: 40px !important;
-        height: 40px !important;
-        border-radius: 50% !important;
-        display: flex;
+    .pill-btn {
+        position: relative;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        position: relative;
-        padding: 0 !important;
-    }
-
-    :global(.toolbar-item:hover) {
-        background: rgba(148, 163, 184, 0.15) !important;
-        color: #fff !important;
-        transform: scale(1.05);
-    }
-
-    :global(.toolbar-item:active) {
-        transform: scale(0.95);
-    }
-
-    .badge {
-        position: absolute;
-        top: 2px;
-        right: 2px;
-        background: linear-gradient(135deg, #f43f5e, #e11d48);
-        color: white;
-        font-size: 10px;
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: 10px;
-        min-width: 16px;
-        text-align: center;
-        line-height: 1.2;
-        box-shadow: 0 2px 8px rgba(244, 63, 94, 0.4);
-    }
-
-    /* ========================================
-       CONSOLE PANEL (Expanded State)
-       ======================================== */
-
-    .console-panel {
-        border-radius: 16px;
-        min-width: 420px;
-        max-width: 520px;
-        max-height: 60vh;
-        animation: expandPanel 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-        overflow: hidden;
-        color: rgba(226, 232, 240, 0.95);
-    }
-
-    @keyframes expandPanel {
-        from {
-            opacity: 0;
-            transform: scale(0.92) translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-        }
-    }
-
-    .panel-content {
-        padding: 4px;
-    }
-
-    /* Console Controls */
-    .console-controls {
-        display: flex;
-        gap: 8px;
-        padding: 8px 8px 12px;
-        align-items: center;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-    }
-
-    .filter-group {
-        flex: 1;
-    }
-
-    :global(.log-filter) {
-        width: 100% !important;
-        padding: 8px 12px !important;
-        border: 1px solid rgba(148, 163, 184, 0.2) !important;
-        border-radius: 10px !important;
-        background: rgba(30, 41, 59, 0.6) !important;
-        font-size: 12px !important;
-        color: rgba(226, 232, 240, 0.9) !important;
-        font-weight: 500 !important;
-        transition: all 0.2s ease;
-        display: flex !important;
-        align-items: center;
-        justify-content: space-between !important;
-        gap: 8px;
-        cursor: pointer;
-        height: auto !important;
-        backdrop-filter: blur(8px);
-    }
-
-    :global(.log-filter:hover) {
-        border-color: rgba(148, 163, 184, 0.35) !important;
-        background: rgba(30, 41, 59, 0.8) !important;
-    }
-
-    :global(.log-filter:focus) {
-        outline: none;
-        border-color: rgba(99, 102, 241, 0.6) !important;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
-    }
-
-    .console-section {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        min-height: 300px;
-    }
-
-    /* ========================================
-       DROPDOWN MENU
-       ======================================== */
-
-    :global(.dropdown-content) {
-        background: rgba(15, 23, 42, 0.9) !important;
-        backdrop-filter: blur(16px) saturate(180%) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        border-radius: 12px !important;
-        min-width: 180px;
-        z-index: 10002;
-        color: rgba(226, 232, 240, 0.95) !important;
-        box-shadow:
-            0 8px 32px rgba(0, 0, 0, 0.4),
-            0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]) {
-        color: rgba(226, 232, 240, 0.9) !important;
-        background: transparent;
-        transition: all 0.15s ease;
-        border-radius: 8px;
-        margin: 2px 4px;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"]:hover) {
-        background: rgba(148, 163, 184, 0.12) !important;
-        color: #fff !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"][data-state="checked"]) {
-        background: rgba(99, 102, 241, 0.2) !important;
-        color: #a5b4fc !important;
-    }
-
-    :global(.dropdown-content [data-slot="dropdown-menu-radio-item"] svg) {
-        color: #a5b4fc !important;
-        fill: #a5b4fc !important;
-    }
-
-    /* ========================================
-       POSITION DROPDOWN
-       ======================================== */
-
-    .position-dropdown {
-        position: absolute;
-        right: 0;
-        border-radius: 14px;
-        padding: 12px;
-        z-index: 10001;
-        animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .sv-console.bottom-left .position-dropdown,
-    .sv-console.bottom-right .position-dropdown,
-    .sv-console.bottom-center .position-dropdown {
-        bottom: calc(100% + 12px);
-    }
-
-    .sv-console.top-left .position-dropdown,
-    .sv-console.top-right .position-dropdown {
-        top: calc(100% + 12px);
-    }
-
-    .position-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 4px;
-        min-width: 150px;
-    }
-
-    :global(.position-option) {
-        display: flex !important;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 14px !important;
-        background: transparent !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        border-radius: 10px !important;
-        color: rgba(226, 232, 240, 0.9) !important;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-size: 12px !important;
-        font-weight: 500 !important;
-        text-align: left;
-        justify-content: flex-start !important;
-        height: auto !important;
-    }
-
-    :global(.position-option:hover) {
-        background: rgba(148, 163, 184, 0.1) !important;
-        border-color: rgba(148, 163, 184, 0.25) !important;
-        color: #fff !important;
-    }
-
-    :global(.position-option.active) {
-        background: rgba(99, 102, 241, 0.15) !important;
-        border-color: rgba(99, 102, 241, 0.4) !important;
-        color: #a5b4fc !important;
-    }
-
-    :global(.position-option.active .corner) {
-        background: #a5b4fc;
-        box-shadow: 0 0 8px rgba(165, 180, 252, 0.5);
-    }
-
-    .position-visual {
-        width: 22px;
-        height: 16px;
-        background: rgba(30, 41, 59, 0.8);
-        border-radius: 4px;
-        position: relative;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-    }
-
-    .corner {
-        width: 5px;
-        height: 5px;
-        background: rgba(148, 163, 184, 0.6);
-        border-radius: 2px;
-        position: absolute;
-        transition: all 0.2s ease;
-    }
-
-    .corner.top-left { top: 2px; left: 2px; }
-    .corner.top-center { top: 2px; left: 50%; transform: translateX(-50%); }
-    .corner.top-right { top: 2px; right: 2px; }
-    .corner.bottom-left { bottom: 2px; left: 2px; }
-    .corner.bottom-right { bottom: 2px; right: 2px; }
-    .corner.bottom-center { bottom: 2px; left: 50%; transform: translateX(-50%); }
-
-    /* ========================================
-       BUTTONS
-       ======================================== */
-
-    :global(.clear-btn) {
-        background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(220, 38, 38, 0.9)) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        font-weight: 500 !important;
-        box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
-        transition: all 0.2s ease;
-    }
-
-    :global(.clear-btn:hover) {
-        background: linear-gradient(135deg, rgba(239, 68, 68, 1), rgba(220, 38, 38, 1)) !important;
-        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
-        transform: translateY(-1px);
-    }
-
-    :global(.clear-btn svg) {
-        color: white !important;
-        stroke: white !important;
-    }
-
-    :global(.minimize-btn) {
-        color: rgba(226, 232, 240, 0.7) !important;
-        border-radius: 8px !important;
-    }
-
-    :global(.minimize-btn:hover) {
-        background: rgba(148, 163, 184, 0.15) !important;
-        color: #fff !important;
-    }
-
-    /* ========================================
-       CONSOLE LOGS
-       ======================================== */
-
-    .console-logs {
-        flex: 1;
-        overflow-y: auto;
-        background: rgba(2, 6, 23, 0.5);
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        border-radius: 12px;
-        margin: 0 8px 8px;
-        padding: 8px;
-        font-family:
-            "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-            "Courier New", monospace;
-        font-size: 12px;
-        line-height: 1.4;
-        scroll-behavior: smooth;
-        max-height: 300px;
-        min-height: 200px;
-    }
-
-    .log-entry {
-        margin: 4px 0;
-        padding: 8px 10px;
-        border-radius: 10px;
-        background: rgba(30, 41, 59, 0.4);
-        border: 1px solid rgba(148, 163, 184, 0.08);
-        transition: all 0.2s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .log-entry:hover {
-        background: rgba(30, 41, 59, 0.6);
-        border-color: rgba(148, 163, 184, 0.15);
-    }
-
-    .log-entry.error {
-        border-left: 3px solid #f43f5e;
-        background: rgba(244, 63, 94, 0.08);
-    }
-
-    .log-entry.warn {
-        border-left: 3px solid #f59e0b;
-        background: rgba(245, 158, 11, 0.08);
-    }
-
-    .log-entry.info {
-        border-left: 3px solid #6366f1;
-        background: rgba(99, 102, 241, 0.08);
-    }
-
-    .log-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-        opacity: 0.85;
-    }
-
-    .log-time {
-        font-size: 11px;
-        color: rgba(148, 163, 184, 0.8);
-        font-weight: 500;
-        font-family: inherit;
-    }
-
-    .log-level {
-        font-size: 9px;
-        font-weight: 600;
-        padding: 3px 8px;
-        border-radius: 6px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .log-level[data-level="error"] {
-        background: rgba(244, 63, 94, 0.15);
-        color: #fb7185;
-    }
-
-    .log-level[data-level="warn"] {
-        background: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
-    }
-
-    .log-level[data-level="info"] {
-        background: rgba(99, 102, 241, 0.15);
-        color: #a5b4fc;
-    }
-
-    .log-level[data-level="log"] {
-        background: rgba(148, 163, 184, 0.15);
-        color: rgba(148, 163, 184, 0.9);
-    }
-
-    .log-content {
-        display: flex;
-        flex-direction: column;
         gap: 6px;
+        height: 32px;
+        min-width: 32px;
+        padding: 0 8px !important;
+        border-radius: 999px;
+        color: var(--sv-muted) !important;
+        transition:
+            background-color 0.4s var(--sv-ease),
+            color 0.4s var(--sv-ease),
+            transform 0.4s var(--sv-ease);
     }
 
-    .log-text {
+    .pill-btn:hover {
+        background: var(--sv-hover) !important;
+        color: var(--sv-text) !important;
+    }
+
+    .pill-btn:active {
+        transform: scale(0.94);
+    }
+
+    .pill-btn.handle {
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .pill-count {
+        font-family: var(--sv-mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--sv-text);
+    }
+
+    .pill-count.has-errors {
+        color: var(--sv-error);
+    }
+
+    .pill-divider {
+        width: 1px;
+        height: 16px;
+        background: var(--sv-line);
+    }
+
+    /* ----------------------------------------
+       Position menu
+       ---------------------------------------- */
+
+    .menu {
+        position: absolute;
+        left: 0;
+        right: 0;
+        width: max-content;
+        margin-inline: auto;
+        padding: 3px;
+        border-radius: 16px;
+        z-index: 1;
+        transform-origin: bottom center;
+        animation: sv-pop 0.5s var(--sv-ease);
+    }
+
+    .sv-console:not(.is-top) .menu { bottom: calc(100% + 8px); }
+    .sv-console.is-top .menu {
+        top: calc(100% + 8px);
+        transform-origin: top center;
+    }
+    .sv-console.top-left .menu,
+    .sv-console.bottom-left .menu { margin-left: 0; }
+    .sv-console.top-right .menu,
+    .sv-console.bottom-right .menu { margin-right: 0; }
+
+    .menu-core {
+        border-radius: 13px;
+        padding: 6px;
+    }
+
+    .pos-grid {
+        display: grid;
+        grid-template-columns: repeat(3, auto);
+        gap: 4px;
+    }
+
+    .pos {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 34px;
+        border-radius: 9px;
+        transition: background-color 0.4s var(--sv-ease);
+    }
+
+    .pos:hover { background: var(--sv-hover) !important; }
+    .pos.active { background: var(--sv-active) !important; }
+
+    .pos-screen {
+        position: relative;
+        width: 28px;
+        height: 18px;
+        border-radius: 4px;
+        box-shadow: inset 0 0 0 1px var(--sv-faint);
+        opacity: 0.6;
+        transition: opacity 0.4s var(--sv-ease);
+    }
+
+    .pos:hover .pos-screen,
+    .pos.active .pos-screen { opacity: 1; }
+
+    .pos-mark {
+        position: absolute;
+        width: 9px;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--sv-muted);
+    }
+
+    .pos.active .pos-mark { background: var(--sv-text); }
+
+    .pos-mark.top-left { top: 3px; left: 3px; }
+    .pos-mark.top-center { top: 3px; left: 9.5px; }
+    .pos-mark.top-right { top: 3px; right: 3px; }
+    .pos-mark.bottom-left { bottom: 3px; left: 3px; }
+    .pos-mark.bottom-center { bottom: 3px; left: 9.5px; }
+    .pos-mark.bottom-right { bottom: 3px; right: 3px; }
+
+    /* ----------------------------------------
+       Expanded panel
+       ---------------------------------------- */
+
+    .panel {
+        width: 480px;
+        max-width: calc(100vw - 32px);
+        padding: 4px;
+        border-radius: 20px;
+        transform-origin: bottom center;
+        animation: sv-panel 0.6s var(--sv-ease);
+    }
+
+    .sv-console.is-top .panel { transform-origin: top center; }
+    .sv-console.top-left .panel,
+    .sv-console.bottom-left .panel { transform-origin: bottom left; }
+    .sv-console.top-right .panel,
+    .sv-console.bottom-right .panel { transform-origin: bottom right; }
+    .sv-console.top-left .panel { transform-origin: top left; }
+    .sv-console.top-right .panel { transform-origin: top right; }
+
+    .panel-core {
+        display: flex;
+        flex-direction: column;
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 8px 8px 10px;
+        border-bottom: 1px solid var(--sv-line);
+    }
+
+    .tabs {
+        display: flex;
+        gap: 2px;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .tabs::-webkit-scrollbar { display: none; }
+
+    .tab {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 5px 10px !important;
+        border-radius: 999px;
+        color: var(--sv-muted) !important;
+        white-space: nowrap;
+        transition:
+            background-color 0.4s var(--sv-ease),
+            color 0.4s var(--sv-ease);
+    }
+
+    .tab-label {
+        text-transform: capitalize;
+        font-weight: 500;
+    }
+
+    .tab:hover { color: var(--sv-text) !important; }
+
+    .tab.active {
+        background: var(--sv-active) !important;
+        color: var(--sv-text) !important;
+    }
+
+    .tab-count {
+        font-family: var(--sv-mono);
+        font-size: 10.5px;
+        font-variant-numeric: tabular-nums;
+        color: var(--sv-faint);
+    }
+
+    .tab-count.has-items[data-level="error"] { color: var(--sv-error); }
+    .tab-count.has-items[data-level="warn"] { color: var(--sv-warn); }
+
+    .actions {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+    }
+
+    .text-btn {
+        padding: 5px 10px !important;
+        border-radius: 999px;
+        font-weight: 500;
+        color: var(--sv-muted) !important;
+        transition:
+            background-color 0.4s var(--sv-ease),
+            color 0.4s var(--sv-ease),
+            transform 0.4s var(--sv-ease);
+    }
+
+    .text-btn:hover:not(:disabled) {
+        background: var(--sv-hover) !important;
+        color: var(--sv-text) !important;
+    }
+
+    .text-btn:active:not(:disabled) { transform: scale(0.96); }
+
+    .text-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    .icon-btn {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        color: var(--sv-muted) !important;
+        transition:
+            background-color 0.4s var(--sv-ease),
+            color 0.4s var(--sv-ease),
+            transform 0.4s var(--sv-ease);
+    }
+
+    .icon-btn:hover {
+        background: var(--sv-hover) !important;
+        color: var(--sv-text) !important;
+    }
+
+    .icon-btn:active { transform: scale(0.92); }
+
+    /* ----------------------------------------
+       Log rows
+       ---------------------------------------- */
+
+    .logs {
+        min-height: 220px;
+        max-height: min(380px, 55vh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        font-family: var(--sv-mono);
+        font-size: 11.5px;
+        line-height: 1.6;
+        scrollbar-width: thin;
+        scrollbar-color: var(--sv-active) transparent;
+    }
+
+    .row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 7px 14px;
+        border-bottom: 1px solid var(--sv-line);
+        box-shadow: inset 2px 0 0 transparent;
+        animation: sv-row 0.5s var(--sv-ease);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .row[data-level="info"] { box-shadow: inset 2px 0 0 var(--sv-info); }
+
+    .row[data-level="warn"] {
+        background: var(--sv-warn-bg);
+        box-shadow: inset 2px 0 0 var(--sv-warn);
+    }
+
+    .row[data-level="error"] {
+        background: var(--sv-error-bg);
+        box-shadow: inset 2px 0 0 var(--sv-error);
+    }
+
+    .time {
+        color: var(--sv-faint);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .body {
+        min-width: 0;
+        color: var(--sv-text);
+    }
+
+    .row[data-level="warn"] .text { color: var(--sv-warn); }
+    .row[data-level="error"] .text { color: var(--sv-error); }
+
+    .text {
         white-space: pre-wrap;
         word-break: break-word;
-        color: rgba(226, 232, 240, 0.95);
-        font-size: 12px;
-        line-height: 1.5;
-        font-family: inherit;
     }
 
-    /* ========================================
-       JSON DISPLAY
-       ======================================== */
+    /* ----------------------------------------
+       JSON
+       ---------------------------------------- */
 
-    .log-json-container {
-        margin: 4px 0;
-        display: inline-block;
-        width: 100%;
-    }
-
-    .log-json {
-        background: rgba(2, 6, 23, 0.6);
-        border: 1px solid rgba(148, 163, 184, 0.12);
+    .json {
+        margin: 4px 0 2px;
         border-radius: 10px;
-        font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
-        font-size: 11px;
-        line-height: 1.4;
-        text-align: left;
-        cursor: pointer;
-        transition: all 0.2s ease;
+        box-shadow: inset 0 0 0 1px var(--sv-line);
         overflow: hidden;
     }
 
-    .log-json:hover {
-        border-color: rgba(148, 163, 184, 0.2);
-        background: rgba(2, 6, 23, 0.8);
-    }
-
-    .log-json.collapsed {
-        padding: 10px 14px;
-    }
-
-    .log-json.expanded {
-        padding: 10px 14px 14px;
-    }
-
-    .expand-header {
+    .json-toggle {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 8px;
-        font-size: 10px;
-        color: rgba(148, 163, 184, 0.7);
-        font-weight: 600;
+        width: 100%;
+        padding: 6px 10px !important;
+        text-align: left;
+        color: var(--sv-muted) !important;
+        transition: background-color 0.4s var(--sv-ease);
     }
 
-    .expand-indicator {
-        color: rgba(148, 163, 184, 0.8);
-        font-family: monospace;
-        font-size: 9px;
-        width: 10px;
-        text-align: center;
+    .json-toggle:hover { background: var(--sv-hover) !important; }
+
+    .chevron {
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        transition: transform 0.5s var(--sv-ease);
     }
 
-    .expand-text {
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.9;
-    }
+    .json.open .chevron { transform: rotate(90deg); }
 
-    .json-content {
-        white-space: pre;
-        overflow-x: auto;
-        max-height: 300px;
-        overflow-y: auto;
-        padding-top: 8px;
-        border-top: 1px solid rgba(148, 163, 184, 0.1);
+    .json-kind {
+        flex-shrink: 0;
+        font-family: var(--sv-font);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--sv-muted);
     }
 
     .json-preview {
-        opacity: 0.85;
-        white-space: nowrap;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        font-size: 10px;
-        line-height: 1.3;
+        white-space: nowrap;
+        color: var(--sv-text);
     }
 
-    /* JSON Syntax Highlighting */
-    :global(.json-key) {
-        color: #93c5fd;
-        font-weight: 600;
+    .json-content {
+        margin: 0;
+        padding: 8px 12px 10px;
+        max-height: 280px;
+        overflow: auto;
+        border-top: 1px solid var(--sv-line);
+        font: inherit;
+        white-space: pre;
+        color: var(--sv-text);
+        animation: sv-fade 0.4s var(--sv-ease);
     }
 
-    :global(.json-string) {
-        color: #86efac;
-    }
-
-    :global(.json-number) {
-        color: #c4b5fd;
-    }
-
-    :global(.json-boolean) {
-        color: #fcd34d;
-        font-weight: 600;
-    }
-
-    :global(.json-null) {
-        color: #fb7185;
-        font-weight: 600;
+    .sv-console :global(.json-key) { color: var(--sv-json-key); }
+    .sv-console :global(.json-string) { color: var(--sv-json-string); }
+    .sv-console :global(.json-number) { color: var(--sv-json-number); }
+    .sv-console :global(.json-boolean) { color: var(--sv-json-boolean); }
+    .sv-console :global(.json-null) {
+        color: var(--sv-faint);
         font-style: italic;
     }
+    .sv-console :global(.json-bracket),
+    .sv-console :global(.json-comma),
+    .sv-console :global(.json-colon) { color: var(--sv-faint); }
 
-    :global(.json-bracket) {
-        color: rgba(148, 163, 184, 0.8);
-        font-weight: bold;
-    }
+    /* ----------------------------------------
+       Empty state
+       ---------------------------------------- */
 
-    :global(.json-comma),
-    :global(.json-colon) {
-        color: rgba(148, 163, 184, 0.7);
-    }
-
-    .log-separator {
-        margin: 0 6px;
-        color: rgba(148, 163, 184, 0.5);
-    }
-
-    /* ========================================
-       EMPTY STATE
-       ======================================== */
-
-    .no-logs {
-        text-align: center;
-        color: rgba(148, 163, 184, 0.6);
-        margin: 40px 20px;
+    .empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-height: 220px;
         padding: 24px;
-        background: rgba(30, 41, 59, 0.3);
-        border: 1px dashed rgba(148, 163, 184, 0.15);
-        border-radius: 12px;
-        font-size: 12px;
+        text-align: center;
+        font-family: var(--sv-font);
     }
 
-    .no-logs p {
-        margin: 12px 0 4px;
-        color: rgba(148, 163, 184, 0.8);
+    .empty-icon {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        color: var(--sv-muted);
+        box-shadow: inset 0 0 0 1px var(--sv-line);
+    }
+
+    .empty-title {
+        margin: 0;
+        font-size: 13px;
         font-weight: 500;
+        color: var(--sv-text);
     }
 
-    .no-logs small {
-        color: rgba(148, 163, 184, 0.5);
+    .empty-hint {
+        margin: 0;
+        max-width: 32ch;
+        color: var(--sv-muted);
     }
 
-    /* ========================================
-       ANIMATIONS
-       ======================================== */
+    /* ----------------------------------------
+       Motion
+       ---------------------------------------- */
 
-    @keyframes slideIn {
+    @keyframes sv-panel {
         from {
             opacity: 0;
-            transform: scale(0.95) translateY(4px);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
+            transform: translateY(8px) scale(0.97);
         }
     }
 
-    /* ========================================
-       RESPONSIVE
-       ======================================== */
-
-    @media (max-width: 480px) {
-        .sv-console {
-            bottom: 16px;
-            right: 16px;
+    @keyframes sv-pop {
+        from {
+            opacity: 0;
+            transform: translateY(4px) scale(0.96);
         }
+    }
 
-        .console-panel {
-            min-width: 280px;
-            max-width: calc(100vw - 32px);
+    @keyframes sv-row {
+        from {
+            opacity: 0;
+            transform: translateY(4px);
         }
+    }
 
-        .console-controls {
-            flex-direction: column;
-            gap: 8px;
-        }
+    @keyframes sv-fade {
+        from { opacity: 0; }
+    }
 
-        .filter-group {
-            width: 100%;
+    @media (prefers-reduced-motion: reduce) {
+        .sv-console *,
+        .sv-console *::before,
+        .sv-console *::after {
+            animation: none !important;
+            transition: none !important;
         }
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+        .shell {
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+        .core { background: var(--sv-text); background: Canvas; }
+    }
+
+    /* ----------------------------------------
+       Small screens
+       ---------------------------------------- */
+
+    @media (max-width: 520px) {
+        .sv-console.top-left,
+        .sv-console.bottom-left { left: 12px; }
+        .sv-console.top-right,
+        .sv-console.bottom-right { right: 12px; }
+        .sv-console.top-left,
+        .sv-console.top-right,
+        .sv-console.top-center { top: 12px; }
+        .sv-console.bottom-left,
+        .sv-console.bottom-right,
+        .sv-console.bottom-center { bottom: 12px; }
+
+        .panel { max-width: calc(100vw - 24px); }
+        .toolbar { padding-left: 6px; }
+        .row { padding: 7px 10px; gap: 8px; }
+        .time { font-size: 10.5px; }
     }
 </style>
